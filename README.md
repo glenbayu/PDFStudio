@@ -1,43 +1,52 @@
 # PDF Studio
 
-PDF editor desktop untuk Windows: buka, edit teks, anotasi, isi formulir, kelola halaman,
-kunci password, dan tanda tangan — tanpa langganan.
+PDF reader & editor desktop untuk Windows: buka banyak dokumen sekaligus (multi-tab), edit teks langsung di atas kertas, anotasi, OCR halaman scan, isi & buat formulir, kelola halaman/gambar, ekspor Word (`.docx`), kunci password AES-256, serta tanda tangan digital PAdES & verifikasinya — tanpa langganan.
 
 Dibangun dengan **Python + PySide6 (Qt) + PyMuPDF + pyHanko**.
 
 ![ikon](assets/app.ico)
 
+## Download (Windows 64-bit)
+
+- **Installer Wizard (.exe) — Direkomendasikan:**
+  [**Download PDFStudio-Setup-1.2.exe**](https://github.com/glenbayu/PDFStudio/releases/latest/download/PDFStudio-Setup-1.2.exe)
+- **Semua versi & paket portable (.zip):**
+  [Halaman GitHub Releases](https://github.com/glenbayu/PDFStudio/releases/latest)
+
+> Klik dua kali **`PDFStudio-Setup-1.2.exe`** untuk menjalankan wizard instalasi Windows (tanpa perlu hak Admin, mendukung shortcut Desktop/Start Menu dan integrasi *Open with* / *Default Apps* untuk file `.pdf`).
+> Jika Windows SmartScreen menampilkan peringatan karena `.exe` belum ditandatangani sertifikat komersial, klik **More info → Run anyway**.
+
 ## Fitur
 
 | Kategori | Fitur |
 |---|---|
-| Melihat | Gulir kontinu antar halaman (seperti Acrobat), render bertahap anti-ngadat, zoom (Ctrl+scroll), fit width/page, thumbnail halaman, navigasi cepat, mode baca (F11), tema gelap/terang |
+| Workspace & Desktop | Multi-tab (`Ctrl+W`, `Ctrl+Tab`), single-instance IPC (buka PDF dari Explorer langsung di tab baru), asosiasi file `.pdf`, simpan layout panel dock, layar awal dengan Dokumen Terbaru, pantau perubahan file eksternal (*reload banner*) |
+| Melihat | Gulir kontinu, satu halaman, **dua halaman berdampingan (Two-Page)**, filter baca **Normal / Mode Malam / Sepia**, hyperlink klik-langsung (tautan internal & eksternal dengan konfirmasi keamanan), zoom (`Ctrl+scroll`), fit width/page, thumbnail halaman, mode baca (`F11`), tema gelap/terang |
 | Anotasi | Sorot, garis bawah, coret, squiggly, catatan tempel, tinta bebas, kotak, elips, garis, panah, callout, stempel teks, gambar |
-| Kelola anotasi | Pilih dengan klik, pindahkan dengan drag, ubah ukuran lewat 8 handle, ubah warna/isi/opasitas, hapus (Delete), panel Komentar |
-| Edit teks | Klik teks langsung di halaman → kursor muncul di situ, ketik, Enter simpan (Shift+Enter baris baru, Esc batal). Font asli PDF dipakai ulang |
-| Cari & ganti | Cari seluruh dokumen, ganti massal per paragraf (case-sensitive / whole word / regex), font asli dipertahankan |
-| Tanda tangan | Gambar tanda tangan di layar / impor PNG, lalu tempel di halaman |
-| TTD digital | Tanda tangan PAdES dengan sertifikat `.pfx`/`.p12` (bisa buat self-signed untuk uji coba) |
-| Formulir | Isi field AcroForm: teks, checkbox, radio, dropdown |
-| Halaman | Putar, hapus, sisip halaman kosong, pindah urutan (drag di thumbnail), duplikat, sisip halaman dari PDF lain, ambil/pisah, gabung PDF |
+| Kelola anotasi | Pilih dengan klik, pindahkan dengan drag, ubah ukuran lewat 8 handle, ubah warna/isi/opasitas, hapus (`Delete`), panel Komentar |
+| Edit teks | Edit paragraf multi-baris langsung di atas kertas (mendukung indentasi baris pertama, rata kanan-kiri *justify*, gaya campuran **tebal**/*miring* + `Ctrl+B`/`Ctrl+I`, `Enter` simpan, `Shift+Enter` baris baru, `Esc` batal). Font asli & fallback TTF Windows dipakai ulang tanpa shadow latar |
+| Cari & ganti | Panel daftar hasil pencarian dengan cuplikan konteks per halaman, toggle **Case-sensitive (`Aa`)** & **Whole-word (`Kata`)**, ganti massal per paragraf (regex/case/whole-word) |
+| Tanda tangan | Pustaka tanda tangan tersimpan persisten (`%LOCALAPPDATA%\PDFStudio\signatures`), gambar di layar / impor PNG |
+| TTD digital | Tanda tangan PAdES multi-penanda tangan dengan sertifikat `.pfx`/`.p12` (bisa buat self-signed), **banner & dialog Verifikasi Tanda Tangan** (cek integritas & deteksi tamper) |
+| Formulir | Isi field AcroForm (teks, checkbox, radio, dropdown) & **Pembuat Field Formulir** baru di halaman |
+| Halaman & Gambar | Putar, **Potong Margin / Auto-Crop**, hapus, sisip halaman kosong, pindah urutan (drag di thumbnail), duplikat, sisip halaman dari PDF lain, ambil/pisah, gabung PDF, **Buat PDF dari Gambar**, **Kelola Gambar Halaman** (ganti, ekstrak, hapus gambar tertanam) |
 | Tata letak dokumen | Watermark teks (tetap bisa diseleksi), nomor halaman, header & footer dengan placeholder `{page}`/`{total}`/`{title}`/`{date}` |
-| Navigasi dokumen | Outline/bookmark (buat dari daftar halaman), panel outline, tautan halaman, lampiran (embed & ekstrak file) |
-| Produktivitas | Command palette (Ctrl+K), proses banyak file sekaligus (batch), bandingkan teks dua PDF, sanitasi metadata/JavaScript/lampiran |
-| Berkas | Simpan / Simpan Sebagai, kompres, ekspor PNG, properti dokumen, cetak (dialog printer) |
-| Keamanan | Proteksi password AES-256 + izin cetak/salin/ubah, hapus password (dengan password lama) |
+| Navigasi dokumen | Outline/bookmark (buat dari daftar halaman), panel outline, tautan halaman, lampiran (embed & ekstrak file dengan sanitasi nama) |
+| Produktivitas | Command palette (`Ctrl+K`), proses banyak file sekaligus (batch), bandingkan teks dua PDF, sanitasi metadata/JavaScript/lampiran, background `QThread` worker untuk operasi berat |
+| Ekspor & Berkas | Simpan / Simpan Sebagai (atomic lintas drive/NAS), kompres, **Ekspor ke Word (`.docx`)**, **Ekspor ke Teks (`.txt`)**, ekspor PNG, properti dokumen, cetak (rentang halaman & batas 300 DPI) |
+| Keamanan | Proteksi password AES-256 + izin cetak/salin/ubah, hapus password, OCR in-memory tanpa skrip `%TEMP%`, hardening IPC `UserAccessOption`, konfirmasi tautan eksternal |
 | Pemulihan | Autosave snapshot berkala + dialog pulihkan otomatis kalau aplikasi mati mendadak |
-| Scan | OCR halaman hasil scan (bawaan Windows 10/11, atau Tesseract bila terpasang) menambah layer teks agar bisa dicari, disalin, dan diedit |
-| Lain | Undo/redo (20 langkah), drag & drop, redaksi permanen, flatten anotasi |
+| Scan | OCR halaman hasil scan (bawaan Windows 10/11 atau Tesseract) menambah layer teks agar bisa dicari, disalin, dan diedit |
+| Lain | Undo/redo (20 langkah), drag & drop banyak PDF / gambar, redaksi permanen, flatten anotasi, hapus latar stabilo / shadow abu-abu |
 
 ## Cara pakai (versi terinstal)
 
-1. Ekstrak `PDFStudio-Setup-1.2.zip`
-2. Klik dua kali **`Install PDF Studio.cmd`**
-3. Aplikasi terpasang di `%LOCALAPPDATA%\Programs\PDFStudio` dan shortcut dibuat di Desktop + Start Menu.
-4. Uninstall lewat *Settings → Apps → PDF Studio*, atau jalankan `uninstall.ps1` di folder instalasi.
+1. Unduh **`PDFStudio-Setup-1.2.exe`** dari [GitHub Releases](https://github.com/glenbayu/PDFStudio/releases/latest)
+2. Klik dua kali **`PDFStudio-Setup-1.2.exe`** dan ikuti wizard instalasi
+3. Aplikasi terpasang di `%LOCALAPPDATA%\Programs\PDFStudio` (tanpa butuh hak Admin), shortcut dibuat di Desktop + Start Menu, dan terdaftar di *Open with* / *Default Apps* untuk file `.pdf`.
+4. Uninstall lewat *Settings → Apps → PDF Studio*.
 
-Windows SmartScreen mungkin memperingatkan karena exe tidak ditandatangani secara komersial:
-klik **More info → Run anyway**.
+Alternatif paket zip portable: ekstrak `PDFStudio-Setup-1.2.zip` lalu jalankan `PDFStudio\PDFStudio.exe` atau `Install PDF Studio.cmd`.
 
 ## Cara pakai (portable)
 
@@ -114,8 +123,9 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
 Hasil:
+- `dist\PDFStudio-Setup-1.2.exe` (Setup Wizard Windows native via Inno Setup 6)
 - `dist\PDFStudio\PDFStudio.exe` (portable, folder)
-- `dist\PDFStudio-Setup-1.2.zip` (installer)
+- `dist\PDFStudio-Setup-1.2.zip` (paket zip)
 
 Build manual:
 
@@ -149,6 +159,8 @@ installer/             skrip install/uninstall
 .\.venv\Scripts\python.exe tests\test_core.py
 .\.venv\Scripts\python.exe tests\test_ui.py
 .\.venv\Scripts\python.exe tests\test_interactions.py
+.\.venv\Scripts\python.exe tests\test_desktop_standards.py
+.\.venv\Scripts\python.exe tests\test_security.py
 ```
 
 ## Batasan yang perlu diketahui

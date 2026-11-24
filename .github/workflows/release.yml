@@ -1,0 +1,68 @@
+name: Release Windows Installer
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Inno Setup 6
+        shell: pwsh
+        run: |
+          winget install --id JRSoftware.InnoSetup --scope user --silent --accept-source-agreements --accept-package-agreements
+
+      - name: Create venv & install dependencies
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install --upgrade pip
+          .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+      - name: Run full test suite
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONIOENCODING: utf-8
+        run: |
+          .\.venv\Scripts\python.exe tests\test_core.py
+          .\.venv\Scripts\python.exe tests\test_ui.py
+          .\.venv\Scripts\python.exe tests\test_interactions.py
+          .\.venv\Scripts\python.exe tests\test_desktop_standards.py
+          .\.venv\Scripts\python.exe tests\test_security.py
+
+      - name: Build portable & Setup Wizard (.exe)
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File build.ps1
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: PDFStudio-Windows
+          path: |
+            dist/PDFStudio-Setup-*.exe
+            dist/PDFStudio-Setup-*.zip
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/PDFStudio-Setup-*.exe
+            dist/PDFStudio-Setup-*.zip
