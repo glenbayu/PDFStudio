@@ -1,0 +1,7 @@
+# PDF Studio runtime dependencies
+PySide6==6.12.0
+pymupdf==1.28.2
+pyhanko==0.38.1
+
+# build-only
+pyinstaller==6.22.3
