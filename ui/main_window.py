@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import traceback
@@ -19,10 +20,10 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox,
                                QDockWidget, QDoubleSpinBox, QFileDialog,
                                QFormLayout, QFrame, QGroupBox, QHBoxLayout,
                                QLabel, QLineEdit, QListWidget, QListWidgetItem,
-                               QMainWindow, QMessageBox, QProgressDialog,
+                               QMainWindow, QMenu, QMessageBox, QProgressDialog,
                                QPushButton, QScrollArea, QSizePolicy, QSpinBox,
-                               QStatusBar, QTabBar, QTabWidget, QToolBar,
-                               QToolButton, QTreeWidget, QTreeWidgetItem,
+                               QStackedWidget, QStatusBar, QTabBar, QTabWidget,
+                               QToolBar, QToolButton, QTreeWidget, QTreeWidgetItem,
                                QVBoxLayout, QWidget)
 
 from ui import theme
@@ -32,6 +33,8 @@ from ui.dialogs import (AboutDialog, DigitalSignDialog, FormFieldDialog,
                       SignatureDialog, SignatureVerifyDialog, TextDialog,
                       TextPrompt)
 from ui.palette import CommandPalette
+from ui.all_tools import AllToolsPanel
+from ui.organize import OrganizePagesView
 from ui.theme import icon
 from ui.thumbnails import ThumbnailPanel
 from ui.tools_dialogs import (AddFormFieldDialog, AnnotPropsDialog,
@@ -110,6 +113,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.doc = PdfDoc()
         self._tabs: list[TabState] = []
+        self._closed_tabs: list[str] = []
         self._active_tab: int = -1
         self._docks_initialized = False
         self._icon_actions: list[tuple[QAction, str]] = []
@@ -126,6 +130,7 @@ class MainWindow(QMainWindow):
         self._search_hits: list[tuple[int, tuple]] = []
         self._search_idx = -1
         self._read_mode = False
+        self._organize_mode = False
         self._restoring_view = False
         self._settings = QSettings("PDFStudio", "PDFStudio")
         self.colors = {
@@ -167,11 +172,14 @@ class MainWindow(QMainWindow):
         self._set_zoom(1.0, "fitp")
         self._update_title()
         self._update_actions()
+        self.dock_tools.hide()
         self.dock_thumbs.hide()
         self.dock_props.hide()
         self.dock_comments.hide()
         self.dock_outline.hide()
         self.dock_search.hide()
+        self.dock_layers.hide()
+        self.dock_fields.hide()
 
         last = self._settings.value("last_folder", "")
         self._last_folder = last if isinstance(last, str) and os.path.isdir(last) else ""
@@ -195,6 +203,8 @@ class MainWindow(QMainWindow):
         self.doc_tabs.setExpanding(False)
         self.doc_tabs.setElideMode(Qt.ElideMiddle)
         self.doc_tabs.setDocumentMode(True)
+        self.doc_tabs.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.doc_tabs.customContextMenuRequested.connect(self._on_tab_context_menu)
         self.doc_tabs.currentChanged.connect(self._on_tab_selected)
         self.doc_tabs.tabCloseRequested.connect(self.close_tab)
         self.doc_tabs.tabMoved.connect(self._on_tab_moved)
@@ -294,6 +304,56 @@ class MainWindow(QMainWindow):
         ctx.addWidget(self.ctx_done)
         self.context_bar.hide()
 
+        # ---- floating-style Find Bar (Ctrl+F)
+        self.find_bar = QWidget()
+        self.find_bar.setObjectName("findBar")
+        fb = QHBoxLayout(self.find_bar)
+        fb.setContentsMargins(10, 5, 10, 5)
+        fb.setSpacing(6)
+        self.find_bar_edit = QLineEdit()
+        self.find_bar_edit.setPlaceholderText("Cari teks dalam dokumen…")
+        self.find_bar_edit.setFixedWidth(230)
+        self.find_bar_edit.setClearButtonEnabled(True)
+        fb.addWidget(self.find_bar_edit)
+        self.find_bar_count = QLabel("0 / 0")
+        self.find_bar_count.setObjectName("hint")
+        self.find_bar_count.setMinimumWidth(52)
+        self.find_bar_count.setAlignment(Qt.AlignCenter)
+        fb.addWidget(self.find_bar_count)
+        self.find_bar_case = QToolButton()
+        self.find_bar_case.setText("Aa")
+        self.find_bar_case.setCheckable(True)
+        self.find_bar_case.setToolTip("Case-sensitive")
+        fb.addWidget(self.find_bar_case)
+        self.find_bar_word = QToolButton()
+        self.find_bar_word.setText("Kata")
+        self.find_bar_word.setCheckable(True)
+        self.find_bar_word.setToolTip("Whole word")
+        fb.addWidget(self.find_bar_word)
+        fb_prev = QToolButton()
+        fb_prev.setText("▲")
+        fb_prev.setToolTip("Hasil sebelumnya")
+        fb_prev.clicked.connect(lambda: self._search_step(-1))
+        fb.addWidget(fb_prev)
+        fb_next = QToolButton()
+        fb_next.setText("▼")
+        fb_next.setToolTip("Hasil berikutnya")
+        fb_next.clicked.connect(lambda: self._search_step(1))
+        fb.addWidget(fb_next)
+        fb_close = QToolButton()
+        fb_close.setText("×")
+        fb_close.setToolTip("Tutup (Esc)")
+        fb_close.clicked.connect(self.find_bar.hide)
+        fb.addWidget(fb_close)
+        QShortcut(QKeySequence(Qt.Key_Escape), self.find_bar, self.find_bar.hide,
+                  context=Qt.WidgetWithChildrenShortcut)
+        self.find_bar.hide()
+
+        self.organize_view = OrganizePagesView(self)
+        self.center_stack = QStackedWidget()
+        self.center_stack.addWidget(self.scroll)
+        self.center_stack.addWidget(self.organize_view)
+
         holder = QWidget()
         lay = QVBoxLayout(holder)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -302,7 +362,8 @@ class MainWindow(QMainWindow):
         lay.addWidget(self.sig_banner)
         lay.addWidget(self.reload_banner)
         lay.addWidget(self.context_bar)
-        lay.addWidget(self.scroll, 1)
+        lay.addWidget(self.find_bar)
+        lay.addWidget(self.center_stack, 1)
         self.setCentralWidget(holder)
 
         self.view = PageView()
@@ -438,6 +499,10 @@ class MainWindow(QMainWindow):
                                      "search", tip="Cari dan jalankan perintah")
         self.act_read = self._act("Mode Baca", self.toggle_read_mode, "F11", "fill_page",
                                   checkable=True, tip="Sembunyikan panel edit")
+        self.act_organize = self._act(
+            "Kelola Halaman (Grid)", self.toggle_organize_mode, "Ctrl+Shift+O",
+            "fit_page", checkable=True,
+            tip="Tampilan grid untuk putar, hapus, sisip, pindah, ekstrak banyak halaman")
         self.act_zoom_sel = self._act("Zoom ke Seleksi", self.zoom_to_selection, None, "zoom_in")
         self.act_dark = self._act("Tema Gelap", lambda: self.set_theme("dark"), None, "fill_page",
                                   checkable=True)
@@ -568,13 +633,18 @@ class MainWindow(QMainWindow):
         m_theme.addAction(self.act_dark)
         m_theme.addAction(self.act_light)
         m_panels = m_view.addMenu("Panel")
+        m_panels.addAction(self.dock_tools.toggleViewAction())
         m_panels.addAction(self.dock_thumbs.toggleViewAction())
         m_panels.addAction(self.dock_props.toggleViewAction())
         m_panels.addAction(self.dock_comments.toggleViewAction())
         m_panels.addAction(self.dock_outline.toggleViewAction())
         m_panels.addAction(self.dock_search.toggleViewAction())
+        m_panels.addAction(self.dock_layers.toggleViewAction())
+        m_panels.addAction(self.dock_fields.toggleViewAction())
 
         m_doc = mb.addMenu("&Dokumen")
+        m_doc.addAction(self.act_organize)
+        m_doc.addSeparator()
         m_doc.addAction(self.act_rotate_l)
         m_doc.addAction(self.act_rotate_r)
         m_doc.addAction(self.act_crop)
@@ -633,6 +703,7 @@ class MainWindow(QMainWindow):
 
     def _build_toolbars(self):
         tb = QToolBar("Utama")
+        tb.setObjectName("mainToolbar")
         tb.setMovable(False)
         tb.setIconSize(QSize(22, 22))
         self.addToolBar(tb)
@@ -695,6 +766,7 @@ class MainWindow(QMainWindow):
         tb.addWidget(self.search_next)
         tb.addSeparator()
         tb.addAction(self.act_print)
+        tb.addAction(self.act_organize)
         tb.addAction(self.act_command)
         tb.addAction(self.act_read)
 
@@ -726,15 +798,99 @@ class MainWindow(QMainWindow):
         rail.addAction(self.act_watermark)
         rail.addAction(self.act_pagenum)
 
+        # ---- right side-panel rail (PdfCraft/Acrobat style)
+        rrail = QToolBar("Panel Samping")
+        rrail.setObjectName("rightRail")
+        rrail.setMovable(False)
+        rrail.setOrientation(Qt.Vertical)
+        rrail.setIconSize(QSize(20, 20))
+        rrail.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        self.addToolBar(Qt.RightToolBarArea, rrail)
+        self.right_rail = rrail
+        self._rail_buttons: list[tuple[QToolButton, QDockWidget]] = []
+        for tip, icon_name, dock in (
+            ("Halaman (Thumbnail)", "fit_page", self.dock_thumbs),
+            ("Outline / Bookmark", "note", self.dock_outline),
+            ("Komentar", "callout", self.dock_comments),
+            ("Field Formulir", "form", self.dock_fields),
+            ("Layer (OCG)", "rect", self.dock_layers),
+            ("Properti & Gaya Alat", "edit_text", self.dock_props),
+            ("Hasil Pencarian", "zoom_in", self.dock_search),
+        ):
+            btn = QToolButton()
+            btn.setCheckable(True)
+            btn.setIcon(icon(icon_name))
+            btn.setToolTip(tip)
+            btn.clicked.connect(lambda _c=False, d=dock: self._toggle_side_dock(d))
+            rrail.addWidget(btn)
+            self._rail_buttons.append((btn, dock))
+
     def _build_docks(self):
+        self.dock_tools = QDockWidget("Semua Alat", self)
+        self.dock_tools.setObjectName("dock_tools")
+        self.dock_tools.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.dock_tools.setMinimumWidth(215)
+        self.dock_tools.setMaximumWidth(320)
+        tool_groups = [
+            ("Edit & Teks", [
+                ("Pilih / Kursor", self.tool_actions["select"]),
+                ("Edit Teks di Halaman", self.tool_actions["edit_text"]),
+                ("Kotak Teks", self.tool_actions["text"]),
+                ("Cari & Ganti", self.act_find_replace),
+            ]),
+            ("Komentar & Anotasi", [
+                ("Sorot Teks", self.tool_actions["highlight"]),
+                ("Garis Bawah", self.tool_actions["underline"]),
+                ("Coret Teks", self.tool_actions["strikeout"]),
+                ("Catatan Tempel", self.tool_actions["note"]),
+                ("Tinta Bebas", self.tool_actions["ink"]),
+                ("Kotak", self.tool_actions["rect"]),
+                ("Elips", self.tool_actions["ellipse"]),
+                ("Panah", self.tool_actions["arrow"]),
+                ("Callout", self.tool_actions["callout"]),
+                ("Stempel", self.tool_actions["stamp"]),
+                ("Sisip Gambar", self.tool_actions["image"]),
+            ]),
+            ("Kelola Halaman", [
+                ("Kelola Halaman (Grid)", self.act_organize),
+                ("Putar Kiri", self.act_rotate_l),
+                ("Putar Kanan", self.act_rotate_r),
+                ("Potong Margin", self.act_crop),
+                ("Sisip Halaman Kosong", self.act_insert_page),
+                ("Duplikat Halaman", self.act_duplicate_page),
+                ("Hapus Halaman", self.act_delete_page),
+                ("Ekstrak / Pisah PDF", self.act_extract),
+                ("Gabung PDF", self.act_merge),
+            ]),
+            ("Formulir & Tanda Tangan", [
+                ("Isi Formulir", self.tool_actions["form"]),
+                ("Buat Field Formulir", self.act_add_form),
+                ("Tanda Tangan", self.tool_actions["signature"]),
+                ("TTD Digital (PAdES)", self.act_sign_digital),
+                ("Verifikasi TTD", self.act_verify_sig),
+            ]),
+            ("Lindungi, Scan & Tata Letak", [
+                ("OCR Halaman Scan", self.act_ocr),
+                ("Redaksi Permanen", self.tool_actions["redact"]),
+                ("Kunci Password AES-256", self.act_protect),
+                ("Watermark", self.act_watermark),
+                ("Nomor Halaman", self.act_pagenum),
+                ("Header & Footer", self.act_header),
+                ("Bandingkan PDF", self.act_compare),
+            ]),
+        ]
+        self.all_tools_panel = AllToolsPanel(tool_groups, self)
+        self.dock_tools.setWidget(self.all_tools_panel)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.dock_tools)
+
         self.dock_thumbs = QDockWidget("Halaman", self)
         self.dock_thumbs.setObjectName("dock_thumbs")
         self.dock_thumbs.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self.thumbs = ThumbnailPanel()
         self.dock_thumbs.setWidget(self.thumbs)
-        self.dock_thumbs.setMinimumWidth(160)
-        self.dock_thumbs.setMaximumWidth(230)
-        self.addDockWidget(Qt.LeftDockWidgetArea, self.dock_thumbs)
+        self.dock_thumbs.setMinimumWidth(200)
+        self.dock_thumbs.setMaximumWidth(320)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.dock_thumbs)
 
         self.dock_props = QDockWidget("Properti", self)
         self.dock_props.setObjectName("dock_props")
@@ -869,11 +1025,16 @@ class MainWindow(QMainWindow):
         crow = QHBoxLayout()
         jump = QPushButton("Loncat")
         jump.clicked.connect(lambda: self._goto_comment(self.comment_list.currentItem()))
+        reply = QPushButton("Balas…")
+        reply.clicked.connect(self._reply_comment)
         remove = QPushButton("Hapus")
         remove.clicked.connect(self._delete_comment)
-        refresh = QPushButton("Muat ulang")
+        refresh = QPushButton("↻")
+        refresh.setFixedWidth(32)
+        refresh.setToolTip("Muat ulang komentar")
         refresh.clicked.connect(self._refresh_comments)
         crow.addWidget(jump)
+        crow.addWidget(reply)
         crow.addWidget(remove)
         crow.addWidget(refresh)
         cl.addLayout(crow)
@@ -930,8 +1091,61 @@ class MainWindow(QMainWindow):
         self.dock_search.setWidget(sw)
         self.addDockWidget(Qt.RightDockWidgetArea, self.dock_search)
 
+        # ---- layers (OCG)
+        self.dock_layers = QDockWidget("Layer (OCG)", self)
+        self.dock_layers.setObjectName("dock_layers")
+        self.dock_layers.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.dock_layers.setMinimumWidth(246)
+        self.dock_layers.setMaximumWidth(340)
+        lw = QWidget()
+        ll = QVBoxLayout(lw)
+        ll.setContentsMargins(10, 10, 10, 10)
+        ll.setSpacing(8)
+        self.layer_summary = QLabel("Tidak ada layer (OCG) pada dokumen ini.")
+        self.layer_summary.setObjectName("hint")
+        self.layer_summary.setWordWrap(True)
+        ll.addWidget(self.layer_summary)
+        self.layer_list = QListWidget()
+        self.layer_list.itemChanged.connect(self._on_layer_item_changed)
+        ll.addWidget(self.layer_list, 1)
+        self.dock_layers.setWidget(lw)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.dock_layers)
+
+        # ---- form fields
+        self.dock_fields = QDockWidget("Field Formulir", self)
+        self.dock_fields.setObjectName("dock_fields")
+        self.dock_fields.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.dock_fields.setMinimumWidth(246)
+        self.dock_fields.setMaximumWidth(340)
+        fw = QWidget()
+        fl = QVBoxLayout(fw)
+        fl.setContentsMargins(10, 10, 10, 10)
+        fl.setSpacing(8)
+        self.field_summary = QLabel("Belum ada field formulir.")
+        self.field_summary.setObjectName("hint")
+        self.field_summary.setWordWrap(True)
+        fl.addWidget(self.field_summary)
+        self.field_list = QListWidget()
+        self.field_list.setWordWrap(True)
+        self.field_list.itemClicked.connect(self._goto_field)
+        self.field_list.itemDoubleClicked.connect(self._edit_field_from_panel)
+        fl.addWidget(self.field_list, 1)
+        frow = QHBoxLayout()
+        btn_fedit = QPushButton("Ubah Nilai…")
+        btn_fedit.clicked.connect(lambda: self._edit_field_from_panel(self.field_list.currentItem()))
+        btn_fref = QPushButton("Muat ulang")
+        btn_fref.clicked.connect(self._refresh_fields)
+        frow.addWidget(btn_fedit)
+        frow.addWidget(btn_fref)
+        fl.addLayout(frow)
+        self.dock_fields.setWidget(fw)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.dock_fields)
+
+        self.tabifyDockWidget(self.dock_props, self.dock_thumbs)
         self.tabifyDockWidget(self.dock_props, self.dock_comments)
         self.tabifyDockWidget(self.dock_props, self.dock_outline)
+        self.tabifyDockWidget(self.dock_props, self.dock_fields)
+        self.tabifyDockWidget(self.dock_props, self.dock_layers)
         self.tabifyDockWidget(self.dock_props, self.dock_search)
         self.dock_props.raise_()
 
@@ -967,11 +1181,19 @@ class MainWindow(QMainWindow):
         self.thumbs.pageSelected.connect(self.go_page)
         self.thumbs.moveRequested.connect(self._thumb_move)
         self.thumbs.actionRequested.connect(self._thumb_action)
+        self.organize_view.batchAction.connect(self._on_organize_batch)
+        self.organize_view.moveRequested.connect(self._on_organize_move)
+        self.organize_view.pageActivated.connect(self._on_organize_page_activated)
+        self.organize_view.closeRequested.connect(lambda: self.toggle_organize_mode(False))
         self.page_spin.valueChanged.connect(lambda v: self.go_page(v - 1))
         self.zoom_box.lineEdit().returnPressed.connect(self._zoom_from_box)
         self.zoom_box.activated.connect(lambda _i: self._zoom_from_box())
-        self.search_edit.textChanged.connect(self._search_debounce)
+        self.search_edit.textChanged.connect(self._on_toolbar_search_changed)
         self.search_edit.returnPressed.connect(lambda: self._search_step(1))
+        self.find_bar_edit.textChanged.connect(self._on_find_bar_changed)
+        self.find_bar_edit.returnPressed.connect(lambda: self._search_step(1))
+        self.find_bar_case.toggled.connect(lambda c: self._sync_search_flags(case=c))
+        self.find_bar_word.toggled.connect(lambda w: self._sync_search_flags(word=w))
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(280)
@@ -987,6 +1209,9 @@ class MainWindow(QMainWindow):
     def _on_escape(self):
         if self.view.inline_active():
             self.view.cancel_inline()
+            return
+        if self._organize_mode:
+            self.toggle_organize_mode(False)
             return
         if self._read_mode:
             self.toggle_read_mode(False)
@@ -1101,7 +1326,7 @@ class MainWindow(QMainWindow):
                   self.act_pagenum, self.act_header, self.act_sanitize,
                   self.act_ocr, self.act_unhighlight,
                   self.act_compare, self.act_attach, self.act_insert_pages,
-                  self.act_duplicate_page, self.act_zoom_sel):
+                  self.act_duplicate_page, self.act_zoom_sel, self.act_organize):
             a.setEnabled(has_doc)
         self.act_undo.setEnabled(has_doc and self.doc.can_undo)
         self.act_redo.setEnabled(has_doc and self.doc.can_redo)
@@ -1188,6 +1413,8 @@ class MainWindow(QMainWindow):
             self.view.show()
 
     def _show_welcome(self):
+        if self._organize_mode:
+            self.toggle_organize_mode(False)
         if self.scroll.widget() is not self.welcome:
             old = self.scroll.takeWidget()
             if old is not None:
@@ -1199,27 +1426,50 @@ class MainWindow(QMainWindow):
         self.sig_banner.hide()
         self.reload_banner.hide()
         self.context_bar.hide()
-        for dock in (self.dock_thumbs, self.dock_props,
-                     self.dock_comments, self.dock_outline, self.dock_search):
+        self.find_bar.hide()
+        for dock in (self.dock_tools, self.dock_thumbs, self.dock_props,
+                     self.dock_comments, self.dock_outline, self.dock_fields,
+                     self.dock_layers, self.dock_search):
             dock.hide()
 
     def _ensure_docks_visible(self):
         if self._docks_initialized:
             return
         self._docks_initialized = True
+        docks = (self.dock_tools, self.dock_thumbs, self.dock_props,
+                 self.dock_comments, self.dock_outline, self.dock_fields,
+                 self.dock_layers, self.dock_search)
         saved_state = self._settings.value("dockState")
         if saved_state:
             self.restoreState(saved_state)
-            if not any(d.isVisible() for d in (self.dock_thumbs, self.dock_props,
-                                               self.dock_comments, self.dock_outline, self.dock_search)):
-                for dock in (self.dock_thumbs, self.dock_props,
-                             self.dock_comments, self.dock_outline, self.dock_search):
+            if not any(d.isVisible() for d in docks):
+                for dock in docks:
                     dock.show()
         else:
-            for dock in (self.dock_thumbs, self.dock_props,
-                         self.dock_comments, self.dock_outline, self.dock_search):
+            for dock in docks:
                 dock.show()
             self.dock_props.raise_()
+        self._sync_rail_buttons()
+
+    def _toggle_side_dock(self, target: QDockWidget):
+        side_docks = (self.dock_thumbs, self.dock_props,
+                      self.dock_comments, self.dock_outline,
+                      self.dock_fields, self.dock_layers, self.dock_search)
+        if target.isVisible() and target.visibleRegion().boundingRect().width() > 0:
+            for d in side_docks:
+                d.hide()
+        else:
+            for d in side_docks:
+                d.show()
+            target.raise_()
+        self._sync_rail_buttons()
+
+    def _sync_rail_buttons(self):
+        for btn, dock in getattr(self, "_rail_buttons", []):
+            active = dock.isVisible() and not dock.visibleRegion().isEmpty()
+            btn.blockSignals(True)
+            btn.setChecked(active)
+            btn.blockSignals(False)
 
     def _sync_watcher(self):
         watched = self._watcher.files()
@@ -1284,6 +1534,8 @@ class MainWindow(QMainWindow):
         self._update_status()
         self._refresh_comments()
         self._refresh_outline()
+        self._refresh_layers()
+        self._refresh_fields()
         self._refresh_sig_banner()
         self._sync_watcher()
         self.hint_label.setText(f"Dimuat ulang: {os.path.basename(path)}")
@@ -1358,6 +1610,8 @@ class MainWindow(QMainWindow):
         self._update_status()
         self._refresh_comments()
         self._refresh_outline()
+        self._refresh_layers()
+        self._refresh_fields()
         self._refresh_sig_banner()
         self.reload_banner.setVisible(bool(tab.externally_modified))
 
@@ -1378,6 +1632,51 @@ class MainWindow(QMainWindow):
         nxt = (self._active_tab + delta) % len(self._tabs)
         self._activate_tab(nxt)
 
+    def _on_tab_context_menu(self, pos):
+        idx = self.doc_tabs.tabAt(pos)
+        if idx < 0:
+            return
+        menu = QMenu(self)
+        act_close = menu.addAction("Tutup Tab")
+        act_close_others = menu.addAction("Tutup Tab Lain")
+        act_close_others.setEnabled(len(self._tabs) > 1)
+        act_reopen = menu.addAction("Buka Kembali Tab Terakhir Ditutup")
+        act_reopen.setEnabled(bool(self._closed_tabs))
+        menu.addSeparator()
+        tab_path = self._tabs[idx].doc.path if 0 <= idx < len(self._tabs) else ""
+        act_reveal = menu.addAction("Tampilkan di Explorer")
+        act_reveal.setEnabled(bool(tab_path and os.path.exists(tab_path)))
+        chosen = menu.exec(self.doc_tabs.mapToGlobal(pos))
+        if chosen == act_close:
+            self.close_tab(idx)
+        elif chosen == act_close_others:
+            for i in range(len(self._tabs) - 1, -1, -1):
+                if i != idx:
+                    if not self.close_tab(i):
+                        break
+                    if i < idx:
+                        idx -= 1
+        elif chosen == act_reopen:
+            self._reopen_last_closed_tab()
+        elif chosen == act_reveal:
+            self._reveal_in_explorer(tab_path)
+
+    def _reopen_last_closed_tab(self):
+        while self._closed_tabs:
+            p = self._closed_tabs.pop()
+            if os.path.exists(p):
+                self.open_file(p)
+                return
+
+    def _reveal_in_explorer(self, path: str):
+        if not path or not os.path.exists(path):
+            return
+        norm = os.path.normpath(path)
+        if os.name == "nt":
+            subprocess.Popen(["explorer", "/select,", norm])
+        else:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(norm)))
+
     def close_tab(self, idx: int | None = None) -> bool:
         if not self._tabs:
             return True
@@ -1391,6 +1690,9 @@ class MainWindow(QMainWindow):
             return False
         self._save_view_state()
         tab = self._tabs.pop(idx)
+        if tab.doc.path and os.path.exists(tab.doc.path):
+            self._closed_tabs.append(tab.doc.path)
+            self._closed_tabs = self._closed_tabs[-15:]
         recovery.discard_snapshot(tab.doc.path)
         tab.doc.cleanup()
         self.doc_tabs.blockSignals(True)
@@ -1414,6 +1716,8 @@ class MainWindow(QMainWindow):
             self._update_status()
             self._refresh_comments()
             self._refresh_outline()
+            self._refresh_layers()
+            self._refresh_fields()
         self._sync_watcher()
         return True
 
@@ -1972,8 +2276,45 @@ class MainWindow(QMainWindow):
         self.hint_label.setText(f"{len(text)} karakter disalin ke clipboard.")
 
     def focus_search(self):
-        self.search_edit.setFocus()
-        self.search_edit.selectAll()
+        if self.doc.is_open:
+            self.find_bar.show()
+            self.find_bar_edit.setFocus()
+            self.find_bar_edit.selectAll()
+        else:
+            self.search_edit.setFocus()
+            self.search_edit.selectAll()
+
+    def _on_toolbar_search_changed(self, text: str):
+        if self.find_bar_edit.text() != text:
+            self.find_bar_edit.blockSignals(True)
+            self.find_bar_edit.setText(text)
+            self.find_bar_edit.blockSignals(False)
+        self._search_debounce()
+
+    def _on_find_bar_changed(self, text: str):
+        if self.search_edit.text() != text:
+            self.search_edit.blockSignals(True)
+            self.search_edit.setText(text)
+            self.search_edit.blockSignals(False)
+        self._search_debounce()
+
+    def _sync_search_flags(self, case=None, word=None):
+        if case is not None:
+            for b in (self.search_case_btn, self.find_bar_case):
+                b.blockSignals(True)
+                b.setChecked(case)
+                b.blockSignals(False)
+        if word is not None:
+            for b in (self.search_word_btn, self.find_bar_word):
+                b.blockSignals(True)
+                b.setChecked(word)
+                b.blockSignals(False)
+        self.run_search()
+
+    def _update_find_bar_count(self):
+        total = len(self._search_hits)
+        cur = (self._search_idx + 1) if (total and 0 <= self._search_idx < total) else 0
+        self.find_bar_count.setText(f"{cur} / {total}")
 
     def _search_debounce(self):
         self._search_timer.start()
@@ -1990,6 +2331,7 @@ class MainWindow(QMainWindow):
             self._search_idx = -1
             self.search_summary.setText("Ketik kata kunci di kotak Cari.")
             self.dock_search.setWindowTitle("Pencarian")
+            self._update_find_bar_count()
             self._refresh_search_view()
             return
         entries = self.doc.search_with_context(query, match_case=mc, whole_word=ww)
@@ -2015,6 +2357,7 @@ class MainWindow(QMainWindow):
             self.dock_search.setWindowTitle("Pencarian (0)")
             self.hint_label.setText(f"Tidak ditemukan: “{query}”")
         self._refresh_search_view()
+        self._update_find_bar_count()
         if self._search_hits:
             self._search_scroll_to_hit()
 
@@ -2191,7 +2534,7 @@ class MainWindow(QMainWindow):
     def edit_metadata(self):
         if not self.doc.is_open:
             return
-        dlg = MetadataDialog(self, self.doc.metadata)
+        dlg = MetadataDialog(self, self.doc.metadata, details=self.doc.document_details())
         if dlg.exec() != MetadataDialog.Accepted:
             return
         meta = self.doc.metadata
@@ -2837,6 +3180,109 @@ class MainWindow(QMainWindow):
                      lambda: self.doc.delete_annotation(pno, xref))
         self._refresh_comments()
 
+    def _reply_comment(self):
+        item = self.comment_list.currentItem()
+        if item is None or not self.doc.is_open:
+            return
+        pno, xref = item.data(Qt.UserRole)
+        dlg = TextPrompt(self, "Balas Komentar", "Tulis balasan untuk anotasi ini:")
+        if dlg.exec() != TextPrompt.Accepted:
+            return
+        reply = dlg.text().strip()
+        if not reply:
+            return
+        annots = self.doc.annotations(pno)
+        cur = next((a for a in annots if a["xref"] == xref), None)
+        old = (cur.get("content") or "").strip() if cur else ""
+        new_content = f"{old}\n↳ {reply}" if old else f"↳ {reply}"
+        self._mutate("Balas komentar",
+                     lambda: self.doc.update_annotation(pno, xref, content=new_content))
+        self._refresh_comments()
+
+    def _refresh_layers(self):
+        if not hasattr(self, "layer_list"):
+            return
+        self.layer_list.blockSignals(True)
+        self.layer_list.clear()
+        if not self.doc.is_open:
+            self.layer_summary.setText("Tidak ada dokumen.")
+            self.dock_layers.setWindowTitle("Layer (OCG)")
+            self.layer_list.blockSignals(False)
+            return
+        layers = self.doc.layers()
+        if not layers:
+            self.layer_summary.setText("Dokumen ini tidak memiliki layer (OCG).")
+            self.dock_layers.setWindowTitle("Layer (OCG)")
+        else:
+            self.layer_summary.setText(f"{len(layers)} layer ditemukan. Centang untuk menampilkan:")
+            self.dock_layers.setWindowTitle(f"Layer ({len(layers)})")
+            for lyr in layers:
+                it = QListWidgetItem(lyr["name"])
+                it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
+                it.setCheckState(Qt.Checked if lyr["on"] else Qt.Unchecked)
+                it.setData(Qt.UserRole, lyr["xref"])
+                self.layer_list.addItem(it)
+        self.layer_list.blockSignals(False)
+
+    def _on_layer_item_changed(self, item: QListWidgetItem):
+        if not self.doc.is_open or item is None:
+            return
+        xref = item.data(Qt.UserRole)
+        if xref is None:
+            return
+        on = item.checkState() == Qt.Checked
+        if self.doc.set_layer_visible(int(xref), on):
+            self.view.invalidate()
+            self.thumbs.rebuild()
+            if self._organize_mode:
+                self.organize_view.rebuild()
+            self.hint_label.setText(
+                f"Layer “{item.text()}” {'ditampilkan' if on else 'disembunyikan'}.")
+
+    def _refresh_fields(self):
+        if not hasattr(self, "field_list"):
+            return
+        self.field_list.clear()
+        if not self.doc.is_open:
+            self.field_summary.setText("Tidak ada dokumen.")
+            self.dock_fields.setWindowTitle("Field Formulir")
+            return
+        widgets = self.doc.all_widgets()
+        if not widgets:
+            self.field_summary.setText("Dokumen ini tidak memiliki field formulir.")
+            self.dock_fields.setWindowTitle("Field Formulir")
+            return
+        self.field_summary.setText(f"{len(widgets)} field formulir:")
+        self.dock_fields.setWindowTitle(f"Field Formulir ({len(widgets)})")
+        for w in widgets:
+            val = w.get("value")
+            val_s = "✓" if val is True else ("☐" if val is False else str(val or ""))
+            it = QListWidgetItem(f"Hal {w['page'] + 1} · {w['name']} ({w['type']}) = {val_s}")
+            it.setData(Qt.UserRole, w)
+            self.field_list.addItem(it)
+
+    def _goto_field(self, item: QListWidgetItem):
+        if item is None:
+            return
+        w = item.data(Qt.UserRole)
+        if w and isinstance(w, dict):
+            self.go_page(w["page"])
+
+    def _edit_field_from_panel(self, item: QListWidgetItem):
+        if item is None or not self.doc.is_open:
+            return
+        w = item.data(Qt.UserRole)
+        if not w or not isinstance(w, dict):
+            return
+        pno = w["page"]
+        self.go_page(pno)
+        dlg = FormFieldDialog(self, w)
+        if dlg.exec() != FormFieldDialog.Accepted:
+            return
+        val = dlg.value()
+        self._mutate("Isi formulir", lambda: self.doc.set_widget(pno, w["name"], val))
+        self._refresh_fields()
+
     def _refresh_outline(self):
         if not hasattr(self, "outline_tree"):
             return
@@ -3333,7 +3779,107 @@ class MainWindow(QMainWindow):
         self._mutate("Pindah halaman", lambda: self.doc.move_page(src, dst),
                      refresh=False)
         self.thumbs.rebuild()
+        if self._organize_mode:
+            self.organize_view.rebuild()
         self._sync_page(dst)
+
+    def toggle_organize_mode(self, on=None):
+        if not self.doc.is_open:
+            self._organize_mode = False
+            self.act_organize.setChecked(False)
+            self.center_stack.setCurrentWidget(self.scroll)
+            return
+        if on is None:
+            on = not self._organize_mode
+        self._organize_mode = bool(on)
+        self.act_organize.setChecked(self._organize_mode)
+        if self._organize_mode:
+            self.organize_view.set_document(self.doc)
+            self.center_stack.setCurrentWidget(self.organize_view)
+            self.hint_label.setText(
+                "Kelola Halaman — klik/Ctrl+klik/Shift+klik pilih banyak, seret untuk pindah, klik ganda buka halaman.")
+        else:
+            self.center_stack.setCurrentWidget(self.scroll)
+            self.view.invalidate()
+            self._sync_page(min(self.pno, max(0, self.doc.page_count - 1)))
+            self._update_status()
+
+    def _on_organize_page_activated(self, pno: int):
+        self.toggle_organize_mode(False)
+        self.go_page(pno)
+
+    def _on_organize_move(self, src: int, dst: int):
+        if not self.doc.is_open:
+            return
+        self._mutate("Pindah halaman", lambda: self.doc.move_page(src, dst),
+                     refresh=False)
+        self.thumbs.rebuild()
+        self.organize_view.rebuild()
+        self._sync_page(dst)
+
+    def _on_organize_batch(self, action: str, pages: list[int]):
+        if not self.doc.is_open:
+            return
+        if action in ("rotate_l", "rotate_r"):
+            if not pages:
+                return
+            delta = -90 if action == "rotate_l" else 90
+            def _rot():
+                for p in pages:
+                    self.doc.rotate_page(p, delta)
+            self._mutate(f"Putar {len(pages)} halaman", _rot, refresh=False)
+            self.thumbs.rebuild()
+            self.organize_view.rebuild()
+        elif action == "insert_blank":
+            at = (pages[-1] + 1) if pages else self.doc.page_count
+            self._mutate("Sisip halaman kosong", lambda: self.doc.insert_blank(at),
+                         refresh=False)
+            self.thumbs.rebuild()
+            self.organize_view.rebuild()
+        elif action == "insert_pdf":
+            self.insert_pages_pdf()
+            if self._organize_mode:
+                self.organize_view.rebuild()
+        elif action == "duplicate":
+            if not pages:
+                return
+            def _dup():
+                for p in reversed(pages):
+                    self.doc.duplicate_page(p)
+            self._mutate(f"Duplikat {len(pages)} halaman", _dup, refresh=False)
+            self.thumbs.rebuild()
+            self.organize_view.rebuild()
+        elif action == "extract":
+            if not pages:
+                return
+            out, _ = QFileDialog.getSaveFileName(
+                self, "Ekstrak halaman terpilih",
+                self._suggest_out("ekstrak.pdf"), "PDF (*.pdf)")
+            if not out:
+                return
+            try:
+                self.doc.extract(pages, out)
+                self.hint_label.setText(f"{len(pages)} halaman diekstrak ke {os.path.basename(out)}.")
+            except Exception as exc:
+                QMessageBox.critical(self, "Gagal", self._friendly(exc))
+        elif action == "delete":
+            if not pages or self.doc.page_count - len(pages) < 1:
+                QMessageBox.information(self, "Tidak bisa hapus",
+                                        "Dokumen harus menyisakan minimal 1 halaman.")
+                return
+            if QMessageBox.question(
+                self, "Hapus halaman",
+                f"Hapus {len(pages)} halaman terpilih?",
+                QMessageBox.Yes | QMessageBox.No
+            ) != QMessageBox.Yes:
+                return
+            def _del():
+                for p in reversed(pages):
+                    self.doc.delete_page(p)
+            self._mutate(f"Hapus {len(pages)} halaman", _del, refresh=False)
+            self.pno = min(self.pno, self.doc.page_count - 1)
+            self.thumbs.rebuild()
+            self.organize_view.rebuild()
 
     def _thumb_action(self, action, row):
         if not self.doc.is_open:
@@ -3402,15 +3948,17 @@ class MainWindow(QMainWindow):
             on = not self._read_mode
         self._read_mode = bool(on)
         self.act_read.setChecked(self._read_mode)
-        for widget in (self.menuBar(), self.tool_rail):
+        for widget in (self.menuBar(), self.tool_rail, self.right_rail):
             widget.setVisible(not self._read_mode)
         self.doc_tabs_bar.setVisible(not self._read_mode and bool(self._tabs))
-        for dock in (self.dock_thumbs, self.dock_props,
-                     self.dock_comments, self.dock_outline, self.dock_search):
+        for dock in (self.dock_tools, self.dock_thumbs, self.dock_props,
+                     self.dock_comments, self.dock_outline, self.dock_fields,
+                     self.dock_layers, self.dock_search):
             dock.setVisible(not self._read_mode)
         self.view.set_read_mode(self._read_mode)
         if self._read_mode:
             self.context_bar.setVisible(False)
+            self.find_bar.setVisible(False)
             self.sig_banner.hide()
             self.hint_label.setText("Mode baca — F11 untuk kembali.")
         else:

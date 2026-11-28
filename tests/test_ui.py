@@ -228,6 +228,60 @@ def main():
     assert pal.list.count() == 1
     pal.close()
 
+    # ---- Fase 1: All Tools, Right Rail, Floating Find Bar
+    assert win.all_tools_panel is not None
+    win.all_tools_panel.filter_edit.setText("watermark")
+    assert any(b.isVisible() for _, b, _ in win.all_tools_panel._items)
+    win.all_tools_panel.filter_edit.clear()
+    win.focus_search()
+    assert win.find_bar.isVisible()
+    win.find_bar_edit.setText("halaman")
+    win.run_search()
+    assert "/" in win.find_bar_count.text() and not win.find_bar_count.text().startswith("0 ")
+    win.find_bar.hide()
+    print("[ok] Fase 1: All Tools filter + Floating Find Bar")
+
+    # ---- Fase 2: Organize Pages Grid View
+    win.toggle_organize_mode(True)
+    app.processEvents()
+    assert win._organize_mode and win.center_stack.currentWidget() is win.organize_view
+    assert win.organize_view.grid.count() == win.doc.page_count
+    win.organize_view.grid.item(0).setSelected(True)
+    win.organize_view.grid.item(1).setSelected(True)
+    assert win.organize_view.selected_pages() == [0, 1]
+    win._on_organize_batch("rotate_r", [0, 1])
+    win._on_organize_batch("insert_blank", [1])
+    assert win.doc.page_count == 4
+    win._on_organize_batch("duplicate", [0])
+    assert win.doc.page_count == 5
+    old_q2 = QMessageBox.question
+    QMessageBox.question = lambda *a, **k: QMessageBox.Yes
+    try:
+        win._on_organize_batch("delete", [0, 1])
+    finally:
+        QMessageBox.question = old_q2
+    assert win.doc.page_count == 3
+    win._on_organize_page_activated(1)
+    assert not win._organize_mode and win.pno == 1
+    print("[ok] Fase 2: Organize Pages Grid (multi-select, batch rotate/insert/dup/delete, jump)")
+
+    # ---- Fase 3: Layers (OCG), Form Fields panel, Document Properties tabs
+    ocg_xref = win.doc.doc.add_ocg("Watermark Layer", on=True)
+    win._refresh_layers()
+    assert win.layer_list.count() == 1
+    assert win.doc.set_layer_visible(ocg_xref, False)
+    assert not win.doc.layers()[0]["on"], (win.doc.layers(), win.doc.doc.layer_ui_configs())
+    win.doc.add_form_field(0, (60, 100, 220, 124), "text", "catatan")
+    win._refresh_fields()
+    assert win.field_list.count() >= 1
+    details = win.doc.document_details()
+    assert "fonts" in details and details["fields_count"] >= 1 and details["layers_count"] == 1
+    from ui.dialogs import MetadataDialog
+    mdlg = MetadataDialog(win, win.doc.metadata, details=details)
+    assert mdlg.values()["title"] is not None
+    mdlg.close()
+    print("[ok] Fase 3: Layers (OCG), Form Fields panel, Document Properties tabs")
+
     # screenshot (page 1, fit width)
     win.go_page(0)
     win.fit_page()

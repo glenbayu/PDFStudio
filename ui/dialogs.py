@@ -10,7 +10,7 @@ from PySide6.QtGui import (QColor, QImage, QPainter, QPainterPath, QPen,
 from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDialog,
                                QDialogButtonBox, QFileDialog, QFormLayout,
                                QHBoxLayout, QLabel, QLineEdit, QMessageBox,
-                               QPlainTextEdit, QPushButton, QSpinBox,
+                               QPlainTextEdit, QPushButton, QSpinBox, QTabWidget,
                                QVBoxLayout, QWidget, QGroupBox, QDoubleSpinBox,
                                QSlider, QListWidget, QListWidgetItem)
 
@@ -432,11 +432,17 @@ class PasswordPrompt(BaseDialog):
 
 # ----------------------------------------------------------------- metadata
 class MetadataDialog(BaseDialog):
-    def __init__(self, parent=None, meta=None):
-        super().__init__(parent, "Properti Dokumen", 480)
-        self.header("Properti dokumen")
+    def __init__(self, parent=None, meta=None, details=None):
+        super().__init__(parent, "Properti Dokumen", 560)
+        self.header("Properti dokumen", "Metadata, keamanan, daftar font, dan ringkasan teknis.")
         meta = meta or {}
-        form = QFormLayout()
+        details = details or {}
+
+        tabs = QTabWidget()
+
+        # ---- Tab 1: Deskripsi (editable)
+        t_desc = QWidget()
+        form = QFormLayout(t_desc)
         form.setSpacing(10)
         self.fields = {}
         for key, label in (("title", "Judul"), ("author", "Penulis"),
@@ -444,7 +450,54 @@ class MetadataDialog(BaseDialog):
             e = QLineEdit(meta.get(key) or "")
             self.fields[key] = e
             form.addRow(label, e)
-        self.root.addLayout(form)
+        tabs.addTab(t_desc, "Deskripsi")
+
+        # ---- Tab 2: Keamanan
+        t_sec = QWidget()
+        sform = QFormLayout(t_sec)
+        sform.setSpacing(8)
+        enc = details.get("encryption") or ("Terenkripsi" if details.get("encrypted") else "Tidak ada")
+        sform.addRow("Metode Enkripsi:", QLabel(str(enc)))
+        for key, lbl in (("can_print", "Izin Cetak"),
+                         ("can_copy", "Izin Salin Teks/Gambar"),
+                         ("can_modify", "Izin Ubah Dokumen"),
+                         ("can_annotate", "Izin Anotasi & Formulir")):
+            val = details.get(key, True)
+            sform.addRow(f"{lbl}:", QLabel("Diizinkan" if val else "Dibatasi"))
+        tabs.addTab(t_sec, "Keamanan")
+
+        # ---- Tab 3: Font
+        t_fonts = QWidget()
+        flay = QVBoxLayout(t_fonts)
+        font_list = QListWidget()
+        fonts = details.get("fonts") or []
+        if not fonts:
+            font_list.addItem("Tidak ada informasi font.")
+        else:
+            for f in fonts:
+                emb = "Tertanam" if f.get("embedded") else "Tidak tertanam"
+                font_list.addItem(f"{f.get('name', '?')}  [{f.get('type', '-')}] — {emb}")
+        flay.addWidget(font_list)
+        tabs.addTab(t_fonts, f"Font ({len(fonts)})")
+
+        # ---- Tab 4: Lanjutan
+        t_adv = QWidget()
+        aform = QFormLayout(t_adv)
+        aform.setSpacing(8)
+        w, h = details.get("size") or (0, 0)
+        fsize = details.get("filesize") or 0
+        fsize_txt = f"{fsize / 1024:.1f} KB" if fsize else "-"
+        aform.addRow("Versi PDF:", QLabel(str(details.get("version") or meta.get("format") or "-")))
+        aform.addRow("Jumlah Halaman:", QLabel(str(details.get("pages") or "-")))
+        aform.addRow("Ukuran Halaman (pt):", QLabel(f"{w:.0f} × {h:.0f} pt" if w else "-"))
+        aform.addRow("Ukuran Berkas:", QLabel(fsize_txt))
+        aform.addRow("Pembuat / Producer:", QLabel(str(details.get("producer") or meta.get("producer") or "-")))
+        aform.addRow("Field Formulir:", QLabel(str(details.get("fields_count", 0))))
+        aform.addRow("Layer (OCG):", QLabel(str(details.get("layers_count", 0))))
+        aform.addRow("Lampiran:", QLabel(str(details.get("attachments_count", 0))))
+        tabs.addTab(t_adv, "Lanjutan")
+
+        self.root.addWidget(tabs)
         box, _ = _buttons(self)
         self.root.addWidget(box)
 

@@ -2474,6 +2474,119 @@ class PdfDoc:
         return label, page
 
     # ------------------------------------------------------------------- misc
+    def layers(self) -> list[dict]:
+        """Return Optional Content Groups (OCG layers) with their visibility."""
+        if not self.doc:
+            return []
+        try:
+            ocgs = self.doc.get_ocgs() or {}
+        except Exception:
+            return []
+        out = []
+        overrides = getattr(self, "_layer_overrides", {})
+        for xref, info in ocgs.items():
+            ix = int(xref)
+            out.append({
+                "xref": ix,
+                "name": (info.get("name") or f"Layer {xref}").strip(),
+                "on": overrides[ix] if ix in overrides else bool(info.get("on", True)),
+            })
+        return out
+
+    def set_layer_visible(self, xref: int, on: bool) -> bool:
+        """Toggle visibility of an OCG layer and re-apply OCG state."""
+        if not self.doc:
+            return False
+        try:
+            ocgs = self.doc.get_ocgs() or {}
+            if xref not in ocgs:
+                return False
+            if not hasattr(self, "_layer_overrides"):
+                self._layer_overrides = {}
+            self._layer_overrides[int(xref)] = bool(on)
+            target_name = (ocgs[xref].get("name") or "").strip()
+            ui_cfgs = self.doc.layer_ui_configs() or []
+            matched = False
+            for cfg in ui_cfgs:
+                if (cfg.get("text") or "").strip() == target_name:
+                    self.doc.set_layer_ui_config(int(cfg["number"]), 0 if on else 2)
+                    matched = True
+                    break
+            if not matched and ui_cfgs:
+                idx = list(ocgs.keys()).index(xref)
+                if idx < len(ui_cfgs):
+                    self.doc.set_layer_ui_config(int(ui_cfgs[idx]["number"]), 0 if on else 2)
+                    matched = True
+            if not matched:
+                on_list = [int(x) for x in ocgs if self._layer_overrides.get(int(x), bool(ocgs[x].get("on", True)))]
+                off_list = [int(x) for x in ocgs if int(x) not in on_list]
+                self.doc.set_layer(-1, basestate="ON" if on_list else "OFF",
+                                   on=on_list or None, off=off_list or None)
+            return True
+        except Exception:
+            return False
+
+    def all_fonts(self) -> list[dict]:
+        """List unique fonts used across the document."""
+        if not self.doc:
+            return []
+        seen: set[tuple[str, str, str]] = set()
+        out = []
+        for pno in range(self.page_count):
+            try:
+                for f in self.doc[pno].get_fonts(full=True) or []:
+                    # (xref, ext, type, basefont, name, encoding, referencer)
+                    ext = str(f[1] or "")
+                    ftype = str(f[2] or "")
+                    base = str(f[3] or f[4] or "Unknown")
+                    key = (base, ftype, ext)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    out.append({
+                        "name": base,
+                        "type": ftype,
+                        "ext": ext,
+                        "embedded": bool(ext and ext != "n/a"),
+                    })
+            except Exception:
+                continue
+        return out
+
+    def all_widgets(self) -> list[dict]:
+        """List all form fields across all pages."""
+        if not self.doc:
+            return []
+        out = []
+        for pno in range(self.page_count):
+            for w in self.widgets(pno):
+                item = dict(w)
+                item["page"] = pno
+                out.append(item)
+        return out
+
+    def document_details(self) -> dict:
+        """Detailed document properties for the multi-tab Properties dialog."""
+        meta = self.metadata
+        info = self.info()
+        perms = int(getattr(self.doc, "permissions", -1) or -1) if self.doc else -1
+        return {
+            **info,
+            "metadata": meta,
+            "version": meta.get("format") or "PDF",
+            "creator": meta.get("creator") or "",
+            "producer": meta.get("producer") or "",
+            "encryption": meta.get("encryption") or ("Terenkripsi" if info["encrypted"] else "Tidak ada"),
+            "can_print": bool(perms & fitz.PDF_PERM_PRINT) if perms >= 0 else True,
+            "can_copy": bool(perms & fitz.PDF_PERM_COPY) if perms >= 0 else True,
+            "can_modify": bool(perms & fitz.PDF_PERM_MODIFY) if perms >= 0 else True,
+            "can_annotate": bool(perms & fitz.PDF_PERM_ANNOTATE) if perms >= 0 else True,
+            "fonts": self.all_fonts(),
+            "layers_count": len(self.layers()),
+            "fields_count": len(self.all_widgets()),
+            "attachments_count": len(self.attachments()) if hasattr(self, "attachments") else 0,
+        }
+
     def info(self) -> dict:
         meta = self.metadata
         size = self.page_size(0) if self.page_count else (0, 0)

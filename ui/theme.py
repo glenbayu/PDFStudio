@@ -466,6 +466,28 @@ QSplitter::handle { background: #2a2c31; }
 #sigBannerWarn { background: #332917; border-bottom: 1px solid #6b5222; }
 #sigBannerBad { background: #3a1d20; border-bottom: 1px solid #7a2d34; }
 #reloadBanner { background: #1d2a3a; border-bottom: 1px solid #2e4a6b; }
+#allToolsPanel, #allToolsBody { background: #17181b; }
+#allToolsHeader {
+    color: #8b9099; font-size: 11px; font-weight: 700;
+    padding: 8px 6px 2px 6px; text-transform: uppercase;
+}
+#allToolsBtn {
+    text-align: left; padding: 6px 10px; border-radius: 6px;
+    font-size: 12.5px; background: transparent; border: 1px solid transparent;
+}
+#allToolsBtn:hover { background: #24262b; border-color: #30333a; }
+#allToolsBtn:checked { background: #3a2023; border-color: #e5484d; color: #e6e7ea; }
+#rightRail { background: #17181b; border-left: 1px solid #26282d; padding: 6px 3px; }
+#findBar {
+    background: #202226; border: 1px solid #3a3e46; border-radius: 8px;
+}
+#findBar QLineEdit { padding: 4px 8px; }
+#organizeBar {
+    background: #17181b; border-bottom: 1px solid #26282d;
+}
+#organizeGrid {
+    background: #131417; border: 0; padding: 12px;
+}
 """
 
 # A light theme derived from the dark one so both stay in sync.
