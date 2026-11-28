@@ -490,18 +490,56 @@ QSplitter::handle { background: #2a2c31; }
 #sigBannerWarn { background: #332917; border-bottom: 1px solid #6b5222; }
 #sigBannerBad { background: #3a1d20; border-bottom: 1px solid #7a2d34; }
 #reloadBanner { background: #1d2a3a; border-bottom: 1px solid #2e4a6b; }
-#allToolsPanel, #allToolsBody { background: #17181b; }
+#allToolsPanel, #allToolsBody { background: #181a1e; }
+#allToolsPanel { border-right: 1px solid #262930; }
+#allToolsTopTitle { font-size: 13.5px; font-weight: 700; color: #e6e7ea; background: transparent; }
 #allToolsHeader {
-    color: #8b9099; font-size: 11px; font-weight: 700;
-    padding: 8px 6px 2px 6px; text-transform: uppercase;
+    color: #8b9099; font-size: 10.5px; font-weight: 700;
+    padding: 8px 8px 2px 8px; text-transform: uppercase; letter-spacing: 0.4px;
+    background: transparent;
 }
 #allToolsBtn {
-    text-align: left; padding: 6px 10px; border-radius: 6px;
-    font-size: 12.5px; background: transparent; border: 1px solid transparent;
+    text-align: left; padding: 7px 10px; border-radius: 7px;
+    font-size: 13px; background: transparent; border: 1px solid transparent;
+    color: #d6d9e0;
 }
-#allToolsBtn:hover { background: #24262b; border-color: #30333a; }
-#allToolsBtn:checked { background: #3a2023; border-color: #e5484d; color: #e6e7ea; }
-#rightRail { background: #17181b; border-left: 1px solid #26282d; padding: 6px 3px; }
+#allToolsBtn:hover { background: #23262e; border-color: #2f333d; }
+#allToolsBtn:checked { background: #1e2d47; border-color: #3b82f6; color: #ffffff; }
+#rightRail { background: #181a1e; border-left: 1px solid #262930; padding: 6px 4px; }
+#rightRail QSpinBox, #rightRail QComboBox {
+    background: #22252b; border: 1px solid #30343e; border-radius: 5px;
+    padding: 2px 3px; font-size: 11px;
+}
+#modeBar { background: #181a1e; border-bottom: 1px solid #262930; }
+QPushButton#modeTab {
+    background: transparent; border: 0; border-bottom: 2px solid transparent;
+    border-radius: 0px; padding: 7px 11px; color: #9aa0a6; font-weight: 500;
+}
+QPushButton#modeTab:hover { color: #e6e7ea; background: #22252b; border-radius: 6px; }
+QPushButton#modeTab:checked { color: #ffffff; font-weight: 600; border-bottom: 2px solid #3b82f6; }
+QPushButton#cmdPill {
+    background: #22252b; border: 1px solid #323640; border-radius: 15px;
+    padding: 5px 14px; color: #9aa0a6; text-align: left; min-width: 210px;
+}
+QPushButton#cmdPill:hover { background: #282c34; border-color: #464c5a; color: #e6e7ea; }
+#floatingCanvasBar {
+    background: #202329; border: 1px solid #323640; border-radius: 10px;
+}
+#floatingCanvasBar QToolButton { padding: 6px; border-radius: 7px; }
+#floatingCanvasBar QToolButton:checked { background: #1e2d47; border-color: #3b82f6; }
+#inspectorHeader { background: #181a1e; border-bottom: 1px solid #262930; }
+#inspectorTitle { font-size: 13.5px; font-weight: 700; color: #e6e7ea; background: transparent; }
+#welcomeSection { background: #181a1e; border: 1px solid #262930; border-radius: 12px; }
+#recToolCard {
+    background: #20232a; border: 1px solid #2d313b; border-radius: 10px;
+    text-align: left; padding: 12px;
+}
+#recToolCard:hover { background: #262a33; border-color: #3b82f6; }
+QPushButton#openTile {
+    background: #23262e; border: 1px solid #323640; border-radius: 10px;
+    font-weight: 600; padding: 12px 18px;
+}
+QPushButton#openTile:hover { background: #2a2e38; border-color: #3b82f6; }
 #findBar {
     background: #202226; border: 1px solid #3a3e46; border-radius: 8px;
 }
@@ -518,9 +556,25 @@ QSplitter::handle { background: #2a2c31; }
 _LIGHT_MAP = {
     "#1b1c1f": "#f7f8fa",
     "#1b1d21": "#ffffff",
+    "#181a1e": "#ffffff",
     "#17181b": "#eceef2",
-    "#131417": "#dde1e7",
+    "#131417": "#e8eaef",
     "#202226": "#ffffff",
+    "#202329": "#ffffff",
+    "#20232a": "#f8f9fb",
+    "#22252b": "#f1f3f6",
+    "#23262e": "#f1f3f6",
+    "#252830": "#ebedf2",
+    "#262a33": "#eef2f8",
+    "#282c34": "#e6e9f0",
+    "#2a2e38": "#e6e9f0",
+    "#2d313b": "#d8dde6",
+    "#2f333d": "#d8dde6",
+    "#30343e": "#d0d5df",
+    "#323640": "#d0d5df",
+    "#464c5a": "#9ca3af",
+    "#1e2d47": "#dbeafe",
+    "#d6d9e0": "#1f2328",
     "#2a2c31": "#d5d9e0",
     "#26282d": "#d9dde4",
     "#2c2f36": "#e9ecf1",

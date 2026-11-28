@@ -753,7 +753,8 @@ class PdfDoc:
                      line_gap: float | None = None, indent: float = 0.0,
                      align: str = "left",
                      rich_runs: list[tuple[str, bool, bool]] | None = None,
-                     style_fonts: dict[tuple[bool, bool], str] | None = None) -> bool:
+                     style_fonts: dict[tuple[bool, bool], str] | None = None,
+                     write_rect=None) -> bool:
         """Replace the text inside *rect* (redact + retype).
 
         Inline edits (a *baseline* is given) reuse the font embedded in the PDF
@@ -762,6 +763,7 @@ class PdfDoc:
         """
         page = self.doc[pno]
         r = _rect(*rect)
+        wr = _rect(*write_rect) if write_rect is not None else r
         redact_fill = bg if self._has_image_behind(page, r) else False
         page.add_redact_annot(r, fill=redact_fill)
         page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE,
@@ -792,7 +794,7 @@ class PdfDoc:
                             style_map[st] = self._resolve_style_font(
                                 page, pno, font, st[0], st[1], sf_name, needs_uni)
             return self._insert_inline_flow(
-                page, r, text, float(fontsize), baseline,
+                page, wr, text, float(fontsize), baseline,
                 float(line_gap or fontsize * 1.35),
                 color, face, emb_name, fb_name, single,
                 indent=float(indent or 0.0), align=align or "left",

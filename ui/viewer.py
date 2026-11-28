@@ -43,6 +43,13 @@ class InlineTextEditor(QTextEdit):
         self._done = False
         self._ox, self._oy = float(offset[0]), float(offset[1])
         self._zoom = float(zoom)
+        self._orig_rect = tuple(info["rect"])
+        self._resize_mode = None
+        self._resize_origin = None
+        self._resize_start_size = None
+        self._custom_h = 0
+        self.setMouseTracking(True)
+        self.viewport().setMouseTracking(True)
         self.setFrameShape(QFrame.NoFrame)
         self.setAcceptRichText(False)
         self.setLineWrapMode(QTextEdit.WidgetWidth)
@@ -93,6 +100,7 @@ class InlineTextEditor(QTextEdit):
         width = max(56.0, (x1 - x0) * zoom + 4.0)
         max_w = max(56.0, page_right - left)
         width = min(width, max_w)
+        self._max_w = max_w
         self._content_w = max(20.0, width - 2.0)
 
         gap_pt = float(info.get("line_gap") or 0.0)
@@ -219,9 +227,81 @@ class InlineTextEditor(QTextEdit):
         doc = self.document()
         doc.setTextWidth(self._content_w)
         doc_h = int(round(doc.size().height())) + 4
-        h = max(self._min_h, doc_h)
+        h = max(self._min_h, self._custom_h, doc_h)
         if self.height() != h:
             self.setFixedHeight(max(18, h))
+
+    def custom_pdf_rect(self) -> tuple[float, float, float, float]:
+        x0, y0, _x1, y1 = self._orig_rect
+        new_x1 = x0 + max(20.0, self.width() - 4.0) / self._zoom
+        new_y1 = max(y1, y0 + max(12.0, self.height() - 4.0) / self._zoom)
+        return (x0, y0, new_x1, new_y1)
+
+    def _hit_edge(self, pos) -> str | None:
+        w, h = self.viewport().width(), self.viewport().height()
+        near_r = pos.x() >= w - 9
+        near_b = pos.y() >= h - 9
+        if near_r and near_b:
+            return "rb"
+        if near_r:
+            return "r"
+        if near_b:
+            return "b"
+        return None
+
+    def mousePressEvent(self, ev):
+        if ev.button() == Qt.LeftButton:
+            edge = self._hit_edge(ev.position().toPoint())
+            if edge:
+                self._resize_mode = edge
+                self._resize_origin = ev.globalPosition().toPoint()
+                self._resize_start_size = (self.width(), self.height())
+                ev.accept()
+                return
+        super().mousePressEvent(ev)
+
+    def mouseMoveEvent(self, ev):
+        if self._resize_mode and self._resize_origin is not None:
+            delta = ev.globalPosition().toPoint() - self._resize_origin
+            sw, sh = self._resize_start_size
+            if "r" in self._resize_mode:
+                nw = max(56.0, min(self._max_w, float(sw + delta.x())))
+                self.setFixedWidth(int(round(nw)))
+                self._content_w = max(20.0, nw - 2.0)
+            if "b" in self._resize_mode:
+                self._custom_h = max(self._min_h, sh + delta.y())
+            self._fit_height()
+            self.viewport().update()
+            ev.accept()
+            return
+        edge = self._hit_edge(ev.position().toPoint())
+        if edge == "rb":
+            self.viewport().setCursor(Qt.SizeFDiagCursor)
+        elif edge == "r":
+            self.viewport().setCursor(Qt.SizeHorCursor)
+        elif edge == "b":
+            self.viewport().setCursor(Qt.SizeVerCursor)
+        else:
+            self.viewport().setCursor(Qt.IBeamCursor)
+        super().mouseMoveEvent(ev)
+
+    def mouseReleaseEvent(self, ev):
+        if self._resize_mode:
+            self._resize_mode = None
+            self._resize_origin = None
+            ev.accept()
+            return
+        super().mouseReleaseEvent(ev)
+
+    def paintEvent(self, ev):
+        super().paintEvent(ev)
+        p = QPainter(self.viewport())
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(76, 141, 255, 220))
+        w, h = self.viewport().width(), self.viewport().height()
+        p.drawRect(w - 6, max(0, h // 2 - 4), 5, 8)
+        p.drawRect(w - 7, h - 7, 6, 6)
+        p.end()
 
     def showEvent(self, ev):
         super().showEvent(ev)
@@ -997,17 +1077,17 @@ class PageView(QWidget):
         box = self._page_box(self.pno)
         ed = InlineTextEditor(self, info, self.zoom, click_point,
                               offset=(box["x"], box["y"]))
-        ed.committed.connect(lambda text, i=info, e=ed: self._inline_done(i, text, e.extract_rich_runs()))
+        ed.committed.connect(lambda text, i=info, e=ed: self._inline_done(i, text, e.extract_rich_runs(), e.custom_pdf_rect()))
         ed.cancelled.connect(self._inline_abort)
         self._editor = ed
         ed.show()
         ed.raise_()
         ed.setFocus()
-        self.status.emit("Ketik untuk mengubah teks · Ctrl+B Tebal · Ctrl+I Miring · Enter simpan · Shift+Enter baris baru · Esc batal")
+        self.status.emit("Ketik untuk mengubah teks · Tarik tepi/sudut kotak untuk ubah ukuran · Ctrl+B Tebal · Ctrl+I Miring · Enter simpan · Esc batal")
 
-    def _inline_done(self, info, text, rich_runs=None):
+    def _inline_done(self, info, text, rich_runs=None, custom_rect=None):
         self._editor = None
-        self.inlineCommit.emit({"info": info, "text": text, "rich_runs": rich_runs})
+        self.inlineCommit.emit({"info": info, "text": text, "rich_runs": rich_runs, "write_rect": custom_rect})
 
     def _inline_abort(self):
         self._editor = None

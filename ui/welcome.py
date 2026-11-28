@@ -1,9 +1,9 @@
-"""Welcome / empty-state screen with Recent Files and quick actions."""
+"""PdfCraft-style Home / Welcome workspace with Recommended Tools & Recent Files."""
 from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel,
                                QListWidget, QListWidgetItem, QPushButton,
                                QVBoxLayout, QWidget)
@@ -17,83 +17,125 @@ class WelcomePanel(QWidget):
     imagesRequested = Signal()
     mergeRequested = Signal()
     fileRequested = Signal(str)
+    toolRequested = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setObjectName("welcomePanel")
+
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(20, 24, 20, 24)
-        outer.addStretch(1)
+        outer.setContentsMargins(36, 28, 36, 24)
+        outer.setSpacing(18)
 
-        card = QFrame()
-        card.setObjectName("welcomeCard")
-        card.setMaximumWidth(640)
-        card.setMinimumWidth(420)
-        lay = QVBoxLayout(card)
-        lay.setContentsMargins(36, 30, 36, 28)
-        lay.setSpacing(12)
-
+        # ---- Header
+        hdr = QHBoxLayout()
+        hdr.setSpacing(14)
         logo = QLabel()
-        logo.setFixedSize(68, 68)
-        logo.setPixmap(theme.app_pixmap(68))
-        logo.setAlignment(Qt.AlignCenter)
+        logo.setFixedSize(48, 48)
+        logo.setPixmap(theme.app_pixmap(48))
         logo.setStyleSheet("background:transparent;")
-        logo_row = QHBoxLayout()
-        logo_row.addStretch(1)
-        logo_row.addWidget(logo)
-        logo_row.addStretch(1)
-        lay.addLayout(logo_row)
+        hdr.addWidget(logo)
 
-        title = QLabel("PDF Studio")
+        htxt = QVBoxLayout()
+        htxt.setSpacing(2)
+        title = QLabel("Welcome to PDF Studio")
         title.setObjectName("welcomeTitle")
-        title.setAlignment(Qt.AlignCenter)
-        lay.addWidget(title)
-
-        sub = QLabel("Edit, anotasi, isi formulir, dan tanda tangan PDF — tanpa langganan.")
+        htxt.addWidget(title)
+        sub = QLabel("Workbench PDF lokal & privat — baca, edit teks, anotasi, formulir, OCR, dan tanda tangan digital.")
         sub.setObjectName("welcomeSub")
-        sub.setAlignment(Qt.AlignCenter)
         sub.setWordWrap(True)
-        lay.addWidget(sub)
+        htxt.addWidget(sub)
+        hdr.addLayout(htxt, 1)
+        outer.addLayout(hdr)
 
-        lay.addSpacing(6)
+        # ---- Recommended tools section (PdfCraft style)
+        sec_rec = QFrame()
+        sec_rec.setObjectName("welcomeSection")
+        srl = QVBoxLayout(sec_rec)
+        srl.setContentsMargins(18, 16, 18, 16)
+        srl.setSpacing(12)
+
+        rec_lbl = QLabel("Alat yang Direkomendasikan")
+        rec_lbl.setObjectName("title")
+        rec_lbl.setStyleSheet("background:transparent;")
+        srl.addWidget(rec_lbl)
+
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(10)
-        btn_open = QPushButton("Buka PDF…")
-        btn_open.setObjectName("primary")
-        btn_open.setMinimumHeight(40)
+        cards = [
+            ("Kelola halaman", "Grid · Putar · Hapus", "fit_page", "#4ade80", "organize"),
+            ("Tambah komentar", "Sorot · Catatan · Tinta", "note", "#fbbf24", "highlight"),
+            ("Siapkan formulir", "Isi & buat field baru", "form", "#c084fc", "add_form"),
+            ("Edit PDF", "Edit & tambah teks", "edit_text", "#f472b6", "edit_text"),
+            ("Lindungi PDF", "Password AES-256 · Redaksi", "lock", "#60a5fa", "protect"),
+        ]
+        for idx, (cname, desc, iname, col, action_key) in enumerate(cards):
+            btn = QPushButton()
+            btn.setObjectName("recToolCard")
+            btn.setMinimumHeight(88)
+            btn.setCursor(Qt.PointingHandCursor)
+            bl = QVBoxLayout(btn)
+            bl.setContentsMargins(10, 8, 10, 8)
+            bl.setSpacing(4)
+            top_r = QHBoxLayout()
+            ic_lbl = QLabel()
+            ic_lbl.setPixmap(theme.icon(iname, color=col, size=20).pixmap(20, 20))
+            ic_lbl.setStyleSheet("background:transparent;")
+            name_lbl = QLabel(cname)
+            name_lbl.setStyleSheet("font-weight:600; background:transparent;")
+            top_r.addWidget(ic_lbl)
+            top_r.addWidget(name_lbl, 1)
+            bl.addLayout(top_r)
+            desc_lbl = QLabel(desc)
+            desc_lbl.setObjectName("welcomeHint")
+            desc_lbl.setWordWrap(True)
+            bl.addWidget(desc_lbl)
+            use_lbl = QLabel("Gunakan →")
+            use_lbl.setStyleSheet("color:#60a5fa; font-size:12px; font-weight:600; background:transparent;")
+            bl.addWidget(use_lbl)
+            btn.clicked.connect(lambda _c=False, k=action_key: self.toolRequested.emit(k))
+            grid.addWidget(btn, idx // 3, idx % 3)
+
+        btn_open = QPushButton("  Buka File PDF…")
+        btn_open.setObjectName("openTile")
+        btn_open.setIcon(theme.icon("open", color="#60a5fa", size=22))
+        btn_open.setIconSize(QSize(22, 22))
+        btn_open.setMinimumHeight(88)
+        btn_open.setCursor(Qt.PointingHandCursor)
         btn_open.clicked.connect(self.openRequested.emit)
+        grid.addWidget(btn_open, 1, 2)
 
+        for c in range(3):
+            grid.setColumnStretch(c, 1)
+        srl.addLayout(grid)
+
+        quick_row = QHBoxLayout()
+        quick_row.setSpacing(8)
         btn_img = QPushButton("PDF dari Gambar…")
-        btn_img.setMinimumHeight(40)
         btn_img.clicked.connect(self.imagesRequested.emit)
-
         btn_merge = QPushButton("Gabung PDF…")
-        btn_merge.setMinimumHeight(40)
         btn_merge.clicked.connect(self.mergeRequested.emit)
-
         btn_demo = QPushButton("Buka Dokumen Contoh")
-        btn_demo.setMinimumHeight(40)
         btn_demo.clicked.connect(self.demoRequested.emit)
+        quick_row.addWidget(btn_img)
+        quick_row.addWidget(btn_merge)
+        quick_row.addWidget(btn_demo)
+        quick_row.addStretch(1)
+        srl.addLayout(quick_row)
 
-        grid.addWidget(btn_open, 0, 0)
-        grid.addWidget(btn_img, 0, 1)
-        grid.addWidget(btn_merge, 1, 0)
-        grid.addWidget(btn_demo, 1, 1)
-        grid.setColumnStretch(0, 1)
-        grid.setColumnStretch(1, 1)
-        lay.addLayout(grid)
+        outer.addWidget(sec_rec)
 
-        # Recent files box
-        self._recent_box = QWidget()
-        self._recent_box.setStyleSheet("background:transparent;")
+        # ---- Recent files
+        self._recent_box = QFrame()
+        self._recent_box.setObjectName("welcomeSection")
         rlay = QVBoxLayout(self._recent_box)
-        rlay.setContentsMargins(0, 8, 0, 0)
-        rlay.setSpacing(6)
+        rlay.setContentsMargins(18, 14, 18, 14)
+        rlay.setSpacing(8)
         rhead = QLabel("Dokumen Terbaru")
-        rhead.setObjectName("welcomeSub")
-        rhead.setStyleSheet("font-weight:600; background:transparent;")
+        rhead.setObjectName("title")
+        rhead.setStyleSheet("background:transparent;")
         rlay.addWidget(rhead)
 
         self.recent_list = QListWidget()
@@ -104,30 +146,16 @@ class WelcomePanel(QWidget):
         self.recent_list.itemClicked.connect(self._open_recent_item)
         rlay.addWidget(self.recent_list)
         self._recent_box.hide()
-        lay.addWidget(self._recent_box)
+        outer.addWidget(self._recent_box)
 
-        lay.addSpacing(6)
-        tips = QLabel("Tarik & lepas file PDF (atau gambar) ke jendela ini  ·  Ctrl+O untuk membuka  ·  Ctrl+K Command Palette")
-        tips.setObjectName("welcomeHint")
-        tips.setAlignment(Qt.AlignCenter)
-        tips.setWordWrap(True)
-        lay.addWidget(tips)
-
-        feat = QLabel(
-            "Multi-Tab  ·  Sorot  ·  Catatan  ·  Tinta  ·  Edit teks  ·  OCR  ·  "
-            "Tanda tangan  ·  TTD digital & verifikasi  ·  Form  ·  Gabung/pisah  ·  Password"
+        priv = QLabel(
+            "PRIVASI · PDF Studio berjalan 100% offline di perangkatmu. "
+            "Tanpa akun, tanpa telemetri, dan tanpa pemrosesan cloud.  ·  Ctrl+K Command Palette"
         )
-        feat.setObjectName("welcomeFeat")
-        feat.setAlignment(Qt.AlignCenter)
-        feat.setWordWrap(True)
-        lay.addWidget(feat)
-
-        wrap = QHBoxLayout()
-        wrap.addStretch(1)
-        wrap.addWidget(card)
-        wrap.addStretch(1)
-        outer.addLayout(wrap)
-        outer.addStretch(2)
+        priv.setObjectName("welcomeHint")
+        priv.setWordWrap(True)
+        outer.addWidget(priv)
+        outer.addStretch(1)
 
     def set_recent(self, paths: list[str]) -> None:
         self.recent_list.clear()
@@ -135,8 +163,8 @@ class WelcomePanel(QWidget):
         for p in existing[:6]:
             name = os.path.basename(p)
             folder = os.path.dirname(p)
-            if len(folder) > 52:
-                folder = "…" + folder[-51:]
+            if len(folder) > 56:
+                folder = "…" + folder[-55:]
             item = QListWidgetItem(f"{name}   —   {folder}")
             item.setData(Qt.UserRole, p)
             item.setToolTip(p)

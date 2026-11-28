@@ -94,11 +94,13 @@ def kind_label(kind: str) -> str:
 class _InspectorPage(QWidget):
     """Lightweight page inside the single right-side Inspector dock."""
 
-    def __init__(self, title: str, dock: QDockWidget, stack: QStackedWidget, parent=None):
+    def __init__(self, title: str, dock: QDockWidget, stack: QStackedWidget,
+                 title_label: QLabel | None = None, parent=None):
         super().__init__(parent)
         self._title = title
         self._dock = dock
         self._stack = stack
+        self._title_label = title_label
         self._action = QAction(title, self)
         self._action.setCheckable(True)
         self._action.triggered.connect(lambda: self.show())
@@ -107,6 +109,8 @@ class _InspectorPage(QWidget):
         self._title = title
         if self._stack.currentWidget() is self:
             self._dock.setWindowTitle(title)
+            if self._title_label is not None:
+                self._title_label.setText(title)
 
     def toggleViewAction(self) -> QAction:
         return self._action
@@ -115,6 +119,8 @@ class _InspectorPage(QWidget):
         if self._stack.currentWidget() is not self:
             self._stack.setCurrentWidget(self)
         self._dock.setWindowTitle(self._title)
+        if self._title_label is not None:
+            self._title_label.setText(self._title)
         self._dock.show()
         self._action.setChecked(True)
 
@@ -311,7 +317,8 @@ class MainWindow(QMainWindow):
         self.ctx_color.setFixedSize(30, 24)
         self.ctx_color.setToolTip("Warna alat aktif")
         self.ctx_color.clicked.connect(self._pick_color)
-        ctx.addWidget(QLabel("Warna"))
+        self.ctx_color_lbl = QLabel("Warna")
+        ctx.addWidget(self.ctx_color_lbl)
         ctx.addWidget(self.ctx_color)
 
         self.ctx_width = QDoubleSpinBox()
@@ -321,7 +328,8 @@ class MainWindow(QMainWindow):
         self.ctx_width.setSuffix(" pt")
         self.ctx_width.setFixedWidth(84)
         self.ctx_width.valueChanged.connect(self.width_spin_changed)
-        ctx.addWidget(QLabel("Tebal"))
+        self.ctx_width_lbl = QLabel("Tebal")
+        ctx.addWidget(self.ctx_width_lbl)
         ctx.addWidget(self.ctx_width)
 
         self.ctx_size = QDoubleSpinBox()
@@ -330,7 +338,8 @@ class MainWindow(QMainWindow):
         self.ctx_size.setSuffix(" pt")
         self.ctx_size.setFixedWidth(84)
         self.ctx_size.valueChanged.connect(self.size_spin_changed)
-        ctx.addWidget(QLabel("Ukuran"))
+        self.ctx_size_lbl = QLabel("Ukuran")
+        ctx.addWidget(self.ctx_size_lbl)
         ctx.addWidget(self.ctx_size)
 
         self.ctx_font = QComboBox()
@@ -338,7 +347,8 @@ class MainWindow(QMainWindow):
         self.ctx_font.setFixedWidth(110)
         self.ctx_font.currentTextChanged.connect(
             lambda t: self.view.set_style(font=t))
-        ctx.addWidget(QLabel("Font"))
+        self.ctx_font_lbl = QLabel("Font")
+        ctx.addWidget(self.ctx_font_lbl)
         ctx.addWidget(self.ctx_font)
 
         self.ctx_done = QPushButton("Selesai (Esc)")
@@ -396,11 +406,53 @@ class MainWindow(QMainWindow):
         self.center_stack.addWidget(self.scroll)
         self.center_stack.addWidget(self.organize_view)
 
+        # ---- PdfCraft-style Mode & Command Bar (Row 2)
+        self.mode_bar = QWidget()
+        self.mode_bar.setObjectName("modeBar")
+        mbl = QHBoxLayout(self.mode_bar)
+        mbl.setContentsMargins(10, 4, 10, 4)
+        mbl.setSpacing(6)
+        self.btn_menu_tools = QPushButton("☰  Menu")
+        self.btn_menu_tools.setToolTip("Tampilkan / sembunyikan panel Semua Alat")
+        self.btn_menu_tools.clicked.connect(
+            lambda: self.dock_tools.setVisible(not self.dock_tools.isVisible()))
+        mbl.addWidget(self.btn_menu_tools)
+
+        self._mode_tabs: dict[str, QPushButton] = {}
+        for mkey, mlabel, mfn in (
+            ("tools", "Semua Alat", lambda: self._switch_top_mode("tools")),
+            ("read", "Baca", lambda: self._switch_top_mode("read")),
+            ("edit", "Edit", lambda: self._switch_top_mode("edit")),
+            ("convert", "Konversi", lambda: self._switch_top_mode("convert")),
+            ("esign", "TTD Digital", lambda: self._switch_top_mode("esign")),
+        ):
+            mb_btn = QPushButton(mlabel)
+            mb_btn.setObjectName("modeTab")
+            mb_btn.setCheckable(True)
+            mb_btn.clicked.connect(mfn)
+            mbl.addWidget(mb_btn)
+            self._mode_tabs[mkey] = mb_btn
+        self._mode_tabs["tools"].setChecked(True)
+        mbl.addStretch(1)
+
+        self.cmd_pill = QPushButton("🔍  Cari alat / perintah…   Ctrl+K")
+        self.cmd_pill.setObjectName("cmdPill")
+        self.cmd_pill.clicked.connect(self.command_palette)
+        mbl.addWidget(self.cmd_pill)
+
+        self.btn_theme_quick = QToolButton()
+        self.btn_theme_quick.setText("◐")
+        self.btn_theme_quick.setToolTip("Ganti tema Gelap / Terang")
+        self.btn_theme_quick.clicked.connect(
+            lambda: self.set_theme("light" if theme._current_theme == "dark" else "dark"))
+        mbl.addWidget(self.btn_theme_quick)
+
         holder = QWidget()
         lay = QVBoxLayout(holder)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
         lay.addWidget(self.doc_tabs_bar)
+        lay.addWidget(self.mode_bar)
         lay.addWidget(self.sig_banner)
         lay.addWidget(self.reload_banner)
         lay.addWidget(self.context_bar)
@@ -416,8 +468,18 @@ class MainWindow(QMainWindow):
         self.welcome.imagesRequested.connect(self.create_from_images)
         self.welcome.mergeRequested.connect(self.merge_pdf_standalone)
         self.welcome.fileRequested.connect(self.open_file)
+        self.welcome.toolRequested.connect(self._on_welcome_tool)
         self.scroll.setWidgetResizable(True)
         self.scroll.setWidget(self.welcome)
+
+        # ---- Floating quick-tool capsule over PDF canvas (PdfCraft style)
+        self.canvas_pill = QWidget(self.scroll.viewport())
+        self.canvas_pill.setObjectName("floatingCanvasBar")
+        cpl = QVBoxLayout(self.canvas_pill)
+        cpl.setContentsMargins(4, 6, 4, 6)
+        cpl.setSpacing(4)
+        self._canvas_pill_keys = ("select", "hand", "note", "highlight", "ink", "edit_text")
+        self.canvas_pill.hide()
         self._resize_timer = QTimer(self)
         self._resize_timer.setSingleShot(True)
         self._resize_timer.setInterval(140)
@@ -748,70 +810,47 @@ class MainWindow(QMainWindow):
         tb = QToolBar("Utama")
         tb.setObjectName("mainToolbar")
         tb.setMovable(False)
-        tb.setIconSize(QSize(22, 22))
+        tb.setIconSize(QSize(20, 20))
         self.addToolBar(tb)
-        for a in (self.act_open, self.act_save, self.act_undo, self.act_redo):
-            tb.addAction(a)
-        tb.addSeparator()
-        tb.addAction(self.act_first)
-        tb.addAction(self.act_prev)
-        self.page_spin = QSpinBox()
-        self.page_spin.setRange(1, 1)
-        self.page_spin.setFixedWidth(58)
-        self.page_spin.setAlignment(Qt.AlignCenter)
-        # NoButtons + QSS padding leaves a 1px line edit (Qt quirk), so hide the
-        # buttons through the stylesheet instead.
-        self.page_spin.setStyleSheet(
-            "QSpinBox { padding: 6px 4px; }"
-            "QSpinBox::up-button, QSpinBox::down-button { width: 0px; border: 0px; }")
-        self.page_spin.setToolTip("Nomor halaman")
-        tb.addWidget(self.page_spin)
-        self.page_total = QLabel("/ 0")
-        self.page_total.setObjectName("hint")
-        self.page_total.setFixedWidth(46)
-        tb.addWidget(self.page_total)
-        tb.addAction(self.act_next)
-        tb.addAction(self.act_last)
-        tb.addSeparator()
-        tb.addAction(self.act_zoom_out)
-        self.zoom_box = QComboBox()
-        self.zoom_box.setEditable(True)
-        self.zoom_box.setFixedWidth(84)
-        self.zoom_box.addItems(["50%", "75%", "100%", "125%", "150%", "200%", "300%", "400%"])
-        self.zoom_box.setCurrentText("100%")
-        self.zoom_box.setToolTip("Zoom")
-        tb.addWidget(self.zoom_box)
-        tb.addAction(self.act_zoom_in)
-        tb.addAction(self.act_fit_w)
-        tb.addAction(self.act_fit_p)
-        tb.addSeparator()
+        self.main_toolbar = tb
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Cari di dokumen…")
-        self.search_edit.setFixedWidth(190)
+        self.search_edit.setFixedWidth(180)
         self.search_edit.setClearButtonEnabled(True)
         tb.addWidget(self.search_edit)
         self.search_case_btn = QToolButton()
         self.search_case_btn.setText("Aa")
         self.search_case_btn.setCheckable(True)
-        self.search_case_btn.setToolTip("Cocokkan huruf besar/kecil (Case-sensitive)")
         self.search_case_btn.toggled.connect(lambda _c: self.run_search())
         tb.addWidget(self.search_case_btn)
         self.search_word_btn = QToolButton()
         self.search_word_btn.setText("Kata")
         self.search_word_btn.setCheckable(True)
-        self.search_word_btn.setToolTip("Cocokkan kata utuh saja (Whole word)")
         self.search_word_btn.toggled.connect(lambda _c: self.run_search())
         tb.addWidget(self.search_word_btn)
-        tb.addAction(self.act_find)
         self.search_prev = self._toolbar_btn(self._act("Hasil sebelumnya", lambda: self._search_step(-1), None, "prev"))
         self.search_next = self._toolbar_btn(self._act("Hasil berikutnya", lambda: self._search_step(1), None, "next"))
         tb.addWidget(self.search_prev)
         tb.addWidget(self.search_next)
-        tb.addSeparator()
-        tb.addAction(self.act_print)
-        tb.addAction(self.act_organize)
-        tb.addAction(self.act_command)
-        tb.addAction(self.act_read)
+        tb.hide()
+
+        # Compact actions on the right of PdfCraft mode bar
+        mbl = self.mode_bar.layout()
+        idx_theme = mbl.indexOf(self.btn_theme_quick)
+        for act in (self.act_undo, self.act_redo, self.act_save, self.act_print, self.act_find):
+            b = self._toolbar_btn(act)
+            b.setIconSize(QSize(18, 18))
+            mbl.insertWidget(idx_theme, b)
+            idx_theme += 1
+
+        # Populate floating vertical canvas pill (PdfCraft style)
+        cpl = self.canvas_pill.layout()
+        for key in self._canvas_pill_keys:
+            b = self._toolbar_btn(self.tool_actions[key])
+            b.setIconSize(QSize(19, 19))
+            cpl.addWidget(b)
+        self.canvas_pill.adjustSize()
+        self.canvas_pill.move(14, 14)
 
         rail = QToolBar("Alat")
         rail.setObjectName("toolRail")
@@ -841,20 +880,20 @@ class MainWindow(QMainWindow):
         rail.addAction(self.act_watermark)
         rail.addAction(self.act_pagenum)
 
-        # ---- right side-panel rail (PdfCraft/Acrobat style)
+        # ---- right side-panel rail (PdfCraft style: top panels + bottom page/zoom controls)
         rrail = QToolBar("Panel Samping")
         rrail.setObjectName("rightRail")
         rrail.setMovable(False)
         rrail.setOrientation(Qt.Vertical)
-        rrail.setIconSize(QSize(20, 20))
+        rrail.setIconSize(QSize(19, 19))
         rrail.setToolButtonStyle(Qt.ToolButtonIconOnly)
         self.addToolBar(Qt.RightToolBarArea, rrail)
         self.right_rail = rrail
         self._rail_buttons: list[tuple[QToolButton, QDockWidget]] = []
         for tip, icon_name, dock in (
-            ("Halaman (Thumbnail)", "fit_page", self.dock_thumbs),
-            ("Outline / Bookmark", "note", self.dock_outline),
             ("Komentar", "callout", self.dock_comments),
+            ("Outline / Bookmark", "note", self.dock_outline),
+            ("Halaman (Thumbnail)", "fit_page", self.dock_thumbs),
             ("Field Formulir", "form", self.dock_fields),
             ("Layer (OCG)", "rect", self.dock_layers),
             ("Properti & Gaya Alat", "edit_text", self.dock_props),
@@ -868,82 +907,149 @@ class MainWindow(QMainWindow):
             rrail.addWidget(btn)
             self._rail_buttons.append((btn, dock))
 
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        spacer.setStyleSheet("background:transparent;")
+        rrail.addWidget(spacer)
+
+        self.page_spin = QSpinBox()
+        self.page_spin.setRange(1, 1)
+        self.page_spin.setFixedWidth(40)
+        self.page_spin.setAlignment(Qt.AlignCenter)
+        self.page_spin.setStyleSheet(
+            "QSpinBox { padding: 3px 2px; }"
+            "QSpinBox::up-button, QSpinBox::down-button { width: 0px; border: 0px; }")
+        self.page_spin.setToolTip("Nomor halaman")
+        rrail.addWidget(self.page_spin)
+
+        self.page_total = QLabel("0")
+        self.page_total.setObjectName("hint")
+        self.page_total.setAlignment(Qt.AlignCenter)
+        self.page_total.setFixedWidth(40)
+        self.page_total.setStyleSheet("font-size:11px; background:transparent;")
+        rrail.addWidget(self.page_total)
+
+        rrail.addAction(self.act_prev)
+        rrail.addAction(self.act_next)
+
+        self.zoom_box = QComboBox()
+        self.zoom_box.setEditable(True)
+        self.zoom_box.setFixedWidth(48)
+        self.zoom_box.addItems(["50%", "75%", "100%", "125%", "150%", "200%", "300%"])
+        self.zoom_box.setCurrentText("100%")
+        self.zoom_box.setToolTip("Zoom")
+        self.zoom_box.setStyleSheet("QComboBox::drop-down { width: 0px; }")
+        rrail.addWidget(self.zoom_box)
+
+        rrail.addAction(self.act_fit_w)
+        rrail.addAction(self.act_fit_p)
+        rrail.addAction(self.act_rotate_r)
+        rrail.addAction(self.act_zoom_in)
+        rrail.addAction(self.act_zoom_out)
+
     def _build_docks(self):
         self.dock_tools = QDockWidget("Semua Alat", self)
         self.dock_tools.setObjectName("dock_tools")
+        self.dock_tools.setTitleBarWidget(QWidget())
         self.dock_tools.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.dock_tools.setMinimumWidth(205)
-        self.dock_tools.setMaximumWidth(280)
+        self.dock_tools.setMinimumWidth(215)
+        self.dock_tools.setMaximumWidth(270)
         tool_groups = [
-            ("Edit & Teks", [
-                ("Pilih / Kursor", self.tool_actions["select"]),
-                ("Edit Teks di Halaman", self.tool_actions["edit_text"]),
-                ("Kotak Teks", self.tool_actions["text"]),
-                ("Cari & Ganti", self.act_find_replace),
+            ("Alat Utama", [
+                ("Ekspor PDF (.docx/.txt)", self.act_export_docx, "save", "#60a5fa"),
+                ("Isi & Tanda Tangan", self.tool_actions["signature"], "signature", "#c084fc"),
+                ("Edit Teks di Halaman", self.tool_actions["edit_text"], "edit_text", "#f472b6"),
+                ("Buat PDF dari Gambar", self.act_new_from_images, "image", "#fb7185"),
+                ("Gabung PDF", self.act_merge, "merge", "#60a5fa"),
+                ("Kelola Halaman (Grid)", self.act_organize, "fit_page", "#4ade80"),
+                ("Tambah Komentar & Sorot", self.tool_actions["highlight"], "highlight", "#fbbf24"),
+                ("Scan & OCR", self.act_ocr, "search", "#34d399"),
+                ("Lindungi Password", self.act_protect, "lock", "#60a5fa"),
+                ("Redaksi Permanen", self.tool_actions["redact"], "redact", "#f87171"),
+                ("Kompres PDF", self.act_compress, "save", "#f87171"),
+                ("Siapkan Formulir", self.act_add_form, "form", "#c084fc"),
+                ("Tambah Stempel", self.tool_actions["stamp"], "stamp", "#a78bfa"),
+                ("TTD Digital (PAdES)", self.act_sign_digital, "cert", "#34d399"),
             ]),
-            ("Komentar & Anotasi", [
-                ("Sorot Teks", self.tool_actions["highlight"]),
-                ("Garis Bawah", self.tool_actions["underline"]),
-                ("Coret Teks", self.tool_actions["strikeout"]),
-                ("Catatan Tempel", self.tool_actions["note"]),
-                ("Tinta Bebas", self.tool_actions["ink"]),
-                ("Kotak", self.tool_actions["rect"]),
-                ("Elips", self.tool_actions["ellipse"]),
-                ("Panah", self.tool_actions["arrow"]),
-                ("Callout", self.tool_actions["callout"]),
-                ("Stempel", self.tool_actions["stamp"]),
-                ("Sisip Gambar", self.tool_actions["image"]),
+            ("Anotasi & Edit Lengkap", [
+                ("Pilih / Kursor", self.tool_actions["select"], "select", "#94a3b8"),
+                ("Kotak Teks", self.tool_actions["text"], "text", "#f472b6"),
+                ("Cari dan Ganti", self.act_find_replace, "search", "#60a5fa"),
+                ("Garis Bawah", self.tool_actions["underline"], "underline", "#fbbf24"),
+                ("Coret Teks", self.tool_actions["strikeout"], "strikeout", "#fbbf24"),
+                ("Catatan Tempel", self.tool_actions["note"], "note", "#fbbf24"),
+                ("Tinta Bebas", self.tool_actions["ink"], "ink", "#f472b6"),
+                ("Kotak / Elips / Panah", self.tool_actions["rect"], "rect", "#60a5fa"),
+                ("Callout", self.tool_actions["callout"], "callout", "#38bdf8"),
+                ("Sisip Gambar", self.tool_actions["image"], "image", "#fb7185"),
             ]),
-            ("Kelola Halaman", [
-                ("Kelola Halaman (Grid)", self.act_organize),
-                ("Putar Kiri", self.act_rotate_l),
-                ("Putar Kanan", self.act_rotate_r),
-                ("Potong Margin", self.act_crop),
-                ("Sisip Halaman Kosong", self.act_insert_page),
-                ("Duplikat Halaman", self.act_duplicate_page),
-                ("Hapus Halaman", self.act_delete_page),
-                ("Ekstrak / Pisah PDF", self.act_extract),
-                ("Gabung PDF", self.act_merge),
-            ]),
-            ("Formulir & Tanda Tangan", [
-                ("Isi Formulir", self.tool_actions["form"]),
-                ("Buat Field Formulir", self.act_add_form),
-                ("Tanda Tangan", self.tool_actions["signature"]),
-                ("TTD Digital (PAdES)", self.act_sign_digital),
-                ("Verifikasi TTD", self.act_verify_sig),
-            ]),
-            ("Lindungi, Scan & Tata Letak", [
-                ("OCR Halaman Scan", self.act_ocr),
-                ("Redaksi Permanen", self.tool_actions["redact"]),
-                ("Kunci Password AES-256", self.act_protect),
-                ("Watermark", self.act_watermark),
-                ("Nomor Halaman", self.act_pagenum),
-                ("Header & Footer", self.act_header),
-                ("Bandingkan PDF", self.act_compare),
+            ("Halaman & Tata Letak", [
+                ("Putar Kiri", self.act_rotate_l, "rotate_l", "#4ade80"),
+                ("Putar Kanan", self.act_rotate_r, "rotate_r", "#4ade80"),
+                ("Potong Margin (Crop)", self.act_crop, "fit_width", "#4ade80"),
+                ("Sisip Halaman Kosong", self.act_insert_page, "insert", "#4ade80"),
+                ("Duplikat Halaman", self.act_duplicate_page, "insert", "#4ade80"),
+                ("Hapus Halaman", self.act_delete_page, "trash", "#f87171"),
+                ("Ekstrak / Pisah PDF", self.act_extract, "split", "#60a5fa"),
+                ("Watermark", self.act_watermark, "text", "#a78bfa"),
+                ("Nomor Halaman", self.act_pagenum, "first", "#a78bfa"),
+                ("Header & Footer", self.act_header, "text", "#a78bfa"),
+                ("Bandingkan PDF", self.act_compare, "split", "#f472b6"),
+                ("Verifikasi TTD Digital", self.act_verify_sig, "cert", "#34d399"),
             ]),
         ]
         self.all_tools_panel = AllToolsPanel(tool_groups, self)
+        self.all_tools_panel.closeRequested.connect(self.dock_tools.hide)
         self.dock_tools.setWidget(self.all_tools_panel)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.dock_tools)
 
         self.dock_inspector = QDockWidget("Properti", self)
         self.dock_inspector.setObjectName("dock_inspector")
+        self.dock_inspector.setTitleBarWidget(QWidget())
         self.dock_inspector.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.dock_inspector.setMinimumWidth(255)
-        self.dock_inspector.setMaximumWidth(320)
+        self.dock_inspector.setMinimumWidth(265)
+        self.dock_inspector.setMaximumWidth(330)
+        insp_wrap = QWidget()
+        iwl = QVBoxLayout(insp_wrap)
+        iwl.setContentsMargins(0, 0, 0, 0)
+        iwl.setSpacing(0)
+        insp_hdr = QWidget()
+        insp_hdr.setObjectName("inspectorHeader")
+        ihl = QHBoxLayout(insp_hdr)
+        ihl.setContentsMargins(12, 8, 8, 8)
+        self.inspector_title = QLabel("Properti")
+        self.inspector_title.setObjectName("inspectorTitle")
+        ihl.addWidget(self.inspector_title, 1)
+        insp_close = QToolButton()
+        insp_close.setText("×")
+        insp_close.setFixedSize(24, 24)
+        insp_close.setToolTip("Tutup panel kanan")
+        insp_close.clicked.connect(self._hide_inspector)
+        ihl.addWidget(insp_close)
+        iwl.addWidget(insp_hdr)
         self.inspector_stack = QStackedWidget()
-        self.dock_inspector.setWidget(self.inspector_stack)
+        iwl.addWidget(self.inspector_stack, 1)
+        self.dock_inspector.setWidget(insp_wrap)
         self.addDockWidget(Qt.RightDockWidgetArea, self.dock_inspector)
 
-        self.dock_thumbs = _InspectorPage("Halaman", self.dock_inspector, self.inspector_stack, self)
+        self.dock_thumbs = _InspectorPage("Halaman", self.dock_inspector, self.inspector_stack, self.inspector_title, self)
         t_lay = QVBoxLayout(self.dock_thumbs)
         t_lay.setContentsMargins(4, 4, 4, 4)
         self.thumbs = ThumbnailPanel()
         t_lay.addWidget(self.thumbs)
         self.inspector_stack.addWidget(self.dock_thumbs)
 
-        self.dock_props = _InspectorPage("Properti", self.dock_inspector, self.inspector_stack, self)
-        panel = self.dock_props
+        self.dock_props = _InspectorPage("Properti", self.dock_inspector, self.inspector_stack, self.inspector_title, self)
+        props_outer = QVBoxLayout(self.dock_props)
+        props_outer.setContentsMargins(0, 0, 0, 0)
+        props_outer.setSpacing(0)
+        props_scroll = QScrollArea()
+        props_scroll.setWidgetResizable(True)
+        props_scroll.setFrameShape(QFrame.NoFrame)
+        props_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        panel = QWidget()
+        props_scroll.setWidget(panel)
+        props_outer.addWidget(props_scroll)
         lay = QVBoxLayout(panel)
         lay.setContentsMargins(12, 10, 12, 12)
         lay.setSpacing(12)
@@ -1051,10 +1157,10 @@ class MainWindow(QMainWindow):
         tip.setWordWrap(True)
         lay.addWidget(tip)
 
-        self.inspector_stack.addWidget(panel)
+        self.inspector_stack.addWidget(self.dock_props)
 
         # ---- comments
-        self.dock_comments = _InspectorPage("Komentar", self.dock_inspector, self.inspector_stack, self)
+        self.dock_comments = _InspectorPage("Komentar", self.dock_inspector, self.inspector_stack, self.inspector_title, self)
         cl = QVBoxLayout(self.dock_comments)
         cl.setContentsMargins(8, 8, 8, 8)
         cl.setSpacing(6)
@@ -1086,7 +1192,7 @@ class MainWindow(QMainWindow):
         self.inspector_stack.addWidget(self.dock_comments)
 
         # ---- outline
-        self.dock_outline = _InspectorPage("Outline", self.dock_inspector, self.inspector_stack, self)
+        self.dock_outline = _InspectorPage("Outline", self.dock_inspector, self.inspector_stack, self.inspector_title, self)
         ol = QVBoxLayout(self.dock_outline)
         ol.setContentsMargins(8, 8, 8, 8)
         ol.setSpacing(6)
@@ -1114,7 +1220,7 @@ class MainWindow(QMainWindow):
         self.inspector_stack.addWidget(self.dock_outline)
 
         # ---- search results sidebar
-        self.dock_search = _InspectorPage("Pencarian", self.dock_inspector, self.inspector_stack, self)
+        self.dock_search = _InspectorPage("Pencarian", self.dock_inspector, self.inspector_stack, self.inspector_title, self)
         sl = QVBoxLayout(self.dock_search)
         sl.setContentsMargins(8, 8, 8, 8)
         sl.setSpacing(6)
@@ -1130,7 +1236,7 @@ class MainWindow(QMainWindow):
         self.inspector_stack.addWidget(self.dock_search)
 
         # ---- layers (OCG)
-        self.dock_layers = _InspectorPage("Layer (OCG)", self.dock_inspector, self.inspector_stack, self)
+        self.dock_layers = _InspectorPage("Layer (OCG)", self.dock_inspector, self.inspector_stack, self.inspector_title, self)
         ll = QVBoxLayout(self.dock_layers)
         ll.setContentsMargins(8, 8, 8, 8)
         ll.setSpacing(6)
@@ -1144,7 +1250,7 @@ class MainWindow(QMainWindow):
         self.inspector_stack.addWidget(self.dock_layers)
 
         # ---- form fields
-        self.dock_fields = _InspectorPage("Field Formulir", self.dock_inspector, self.inspector_stack, self)
+        self.dock_fields = _InspectorPage("Field Formulir", self.dock_inspector, self.inspector_stack, self.inspector_title, self)
         fl = QVBoxLayout(self.dock_fields)
         fl.setContentsMargins(8, 8, 8, 8)
         fl.setSpacing(6)
@@ -1301,9 +1407,15 @@ class MainWindow(QMainWindow):
         self.ctx_title.setText(self.tool_actions[key].text() if key in self.tool_actions else key)
         self.ctx_hint.setText(TOOL_HINTS.get(key, ""))
         self.ctx_color.setVisible(cat != "none")
-        self.ctx_width.setVisible(vector or key in ("signature", "cert"))
-        self.ctx_size.setVisible(texty or key in ("callout", "stamp"))
+        self.ctx_color_lbl.setVisible(cat != "none")
+        show_w = vector or key in ("signature", "cert")
+        self.ctx_width.setVisible(show_w)
+        self.ctx_width_lbl.setVisible(show_w)
+        show_s = texty or key in ("callout", "stamp")
+        self.ctx_size.setVisible(show_s)
+        self.ctx_size_lbl.setVisible(show_s)
         self.ctx_font.setVisible(texty)
+        self.ctx_font_lbl.setVisible(texty)
         self.ctx_done.setVisible(bar)
 
         if hasattr(self, "grp_style"):
@@ -1434,6 +1546,8 @@ class MainWindow(QMainWindow):
             self.scroll.setWidgetResizable(False)
             self.scroll.setWidget(self.view)
             self.view.show()
+        self.canvas_pill.setVisible(not self._read_mode and not self._organize_mode)
+        self.canvas_pill.raise_()
 
     def _show_welcome(self):
         if self._organize_mode:
@@ -1445,6 +1559,7 @@ class MainWindow(QMainWindow):
             self.scroll.setWidgetResizable(True)
             self.scroll.setWidget(self.welcome)
             self.welcome.show()
+        self.canvas_pill.hide()
         self.welcome.set_recent(self.recent)
         self.doc_tabs_bar.hide()
         self.sig_banner.hide()
@@ -1454,11 +1569,65 @@ class MainWindow(QMainWindow):
         self.dock_tools.show()
         self.dock_inspector.hide()
 
+    def _hide_inspector(self):
+        self.dock_inspector.hide()
+        self._sync_rail_buttons()
+
+    def _switch_top_mode(self, mode: str):
+        for k, b in self._mode_tabs.items():
+            b.blockSignals(True)
+            b.setChecked(k == mode)
+            b.blockSignals(False)
+        if mode == "tools":
+            if self._read_mode:
+                self.toggle_read_mode(False)
+            self.dock_tools.show()
+            self.all_tools_panel.filter_edit.clear()
+        elif mode == "read":
+            if self.doc.is_open:
+                self.toggle_read_mode(not self._read_mode)
+        elif mode == "edit":
+            if self._read_mode:
+                self.toggle_read_mode(False)
+            self.dock_tools.show()
+            if self.doc.is_open:
+                self._set_tool("edit_text")
+            else:
+                self.open_file()
+        elif mode == "convert":
+            if self._read_mode:
+                self.toggle_read_mode(False)
+            if self.doc.is_open:
+                self.export_docx()
+            else:
+                self.create_from_images()
+        elif mode == "esign":
+            if self._read_mode:
+                self.toggle_read_mode(False)
+            if self.doc.is_open:
+                self.sign_digital()
+            else:
+                self.open_file()
+
+    def _on_welcome_tool(self, key: str):
+        if not self.doc.is_open:
+            self.open_file()
+        if not self.doc.is_open:
+            return
+        if key == "organize":
+            self.toggle_organize_mode(True)
+        elif key == "protect":
+            self.protect()
+        elif key == "add_form":
+            self.add_form_field_tool()
+        elif key in self.tool_actions:
+            self._set_tool(key)
+
     def _ensure_docks_visible(self):
         if self._docks_initialized:
             return
         self._docks_initialized = True
-        saved_state = self._settings.value("dockState_v4")
+        saved_state = self._settings.value("dockState_v5")
         if saved_state:
             self.restoreState(saved_state)
         self.dock_tools.show()
@@ -2881,6 +3050,7 @@ class MainWindow(QMainWindow):
         text = (payload.get("text") or "").replace("\r\n", "\n").replace("\r", "\n")
         text = "\n".join(line.rstrip() for line in text.split("\n")).strip("\n")
         rich_runs = payload.get("rich_runs")
+        write_rect = payload.get("write_rect")
 
         def norm(s):
             return " ".join((s or "").replace("\n", " ").split())
@@ -2890,7 +3060,9 @@ class MainWindow(QMainWindow):
             return
         orig_runs = info.get("rich_runs")
         same_style = (rich_runs is None) or (rich_runs == orig_runs)
-        if norm(text) == norm(info.get("text")) and same_style:
+        orig_r = info.get("rect")
+        same_width = (not write_rect or not orig_r or abs(write_rect[2] - orig_r[2]) <= 4.0)
+        if norm(text) == norm(info.get("text")) and same_style and same_width:
             self.hint_label.setText("Tidak ada perubahan teks.")
             return
 
@@ -2906,7 +3078,8 @@ class MainWindow(QMainWindow):
                 indent=float(info.get("indent") or 0.0),
                 align=info.get("align") or "left",
                 rich_runs=rich_runs,
-                style_fonts=info.get("style_fonts"))
+                style_fonts=info.get("style_fonts"),
+                write_rect=write_rect)
 
         self._mutate("Edit teks", apply)
         self.hint_label.setText("Teks diganti langsung di halaman. Ctrl+S untuk simpan.")
@@ -3958,8 +4131,9 @@ class MainWindow(QMainWindow):
             on = not self._read_mode
         self._read_mode = bool(on)
         self.act_read.setChecked(self._read_mode)
-        for widget in (self.menuBar(), self.right_rail):
+        for widget in (self.menuBar(), self.mode_bar, self.right_rail):
             widget.setVisible(not self._read_mode)
+        self.canvas_pill.setVisible(not self._read_mode and self.doc.is_open and not self._organize_mode)
         if self._read_mode:
             self.tool_rail.setVisible(False)
         self.doc_tabs_bar.setVisible(not self._read_mode and bool(self._tabs))
@@ -3984,6 +4158,8 @@ class MainWindow(QMainWindow):
         self.act_light.setChecked(name == "light")
         self.setStyleSheet(theme.THEME if name == "dark" else theme.LIGHT_THEME)
         self._refresh_icons()
+        if hasattr(self, "all_tools_panel"):
+            self.all_tools_panel.refresh_icons()
         self.view.set_theme(name)
         self.zoom_box.lineEdit().setAlignment(Qt.AlignCenter)
 
@@ -4149,7 +4325,7 @@ class MainWindow(QMainWindow):
         self._save_view_state()
         self._settings.setValue("geometry", self.saveGeometry())
         if self._docks_initialized:
-            self._settings.setValue("dockState_v4", self.saveState())
+            self._settings.setValue("dockState_v5", self.saveState())
         for tab in self._tabs:
             recovery.discard_snapshot(tab.doc.path)
             try:
