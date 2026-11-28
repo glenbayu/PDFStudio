@@ -172,7 +172,8 @@ class MainWindow(QMainWindow):
         self._set_zoom(1.0, "fitp")
         self._update_title()
         self._update_actions()
-        self.dock_tools.hide()
+        self.tool_rail.hide()
+        self.dock_tools.show()
         self.dock_thumbs.hide()
         self.dock_props.hide()
         self.dock_comments.hide()
@@ -374,6 +375,7 @@ class MainWindow(QMainWindow):
         self.welcome.imagesRequested.connect(self.create_from_images)
         self.welcome.mergeRequested.connect(self.merge_pdf_standalone)
         self.welcome.fileRequested.connect(self.open_file)
+        self.scroll.setWidgetResizable(True)
         self.scroll.setWidget(self.welcome)
         self._resize_timer = QTimer(self)
         self._resize_timer.setSingleShot(True)
@@ -1409,6 +1411,7 @@ class MainWindow(QMainWindow):
             old = self.scroll.takeWidget()
             if old is not None:
                 old.setParent(None)
+            self.scroll.setWidgetResizable(False)
             self.scroll.setWidget(self.view)
             self.view.show()
 
@@ -1419,6 +1422,7 @@ class MainWindow(QMainWindow):
             old = self.scroll.takeWidget()
             if old is not None:
                 old.setParent(None)
+            self.scroll.setWidgetResizable(True)
             self.scroll.setWidget(self.welcome)
             self.welcome.show()
         self.welcome.set_recent(self.recent)
@@ -1427,7 +1431,8 @@ class MainWindow(QMainWindow):
         self.reload_banner.hide()
         self.context_bar.hide()
         self.find_bar.hide()
-        for dock in (self.dock_tools, self.dock_thumbs, self.dock_props,
+        self.dock_tools.show()
+        for dock in (self.dock_thumbs, self.dock_props,
                      self.dock_comments, self.dock_outline, self.dock_fields,
                      self.dock_layers, self.dock_search):
             dock.hide()
@@ -1439,7 +1444,7 @@ class MainWindow(QMainWindow):
         docks = (self.dock_tools, self.dock_thumbs, self.dock_props,
                  self.dock_comments, self.dock_outline, self.dock_fields,
                  self.dock_layers, self.dock_search)
-        saved_state = self._settings.value("dockState")
+        saved_state = self._settings.value("dockState_v2")
         if saved_state:
             self.restoreState(saved_state)
             if not any(d.isVisible() for d in docks):
@@ -3948,8 +3953,10 @@ class MainWindow(QMainWindow):
             on = not self._read_mode
         self._read_mode = bool(on)
         self.act_read.setChecked(self._read_mode)
-        for widget in (self.menuBar(), self.tool_rail, self.right_rail):
+        for widget in (self.menuBar(), self.right_rail):
             widget.setVisible(not self._read_mode)
+        if self._read_mode:
+            self.tool_rail.setVisible(False)
         self.doc_tabs_bar.setVisible(not self._read_mode and bool(self._tabs))
         for dock in (self.dock_tools, self.dock_thumbs, self.dock_props,
                      self.dock_comments, self.dock_outline, self.dock_fields,
@@ -4139,7 +4146,7 @@ class MainWindow(QMainWindow):
         self._save_view_state()
         self._settings.setValue("geometry", self.saveGeometry())
         if self._docks_initialized:
-            self._settings.setValue("dockState", self.saveState())
+            self._settings.setValue("dockState_v2", self.saveState())
         for tab in self._tabs:
             recovery.discard_snapshot(tab.doc.path)
             try:

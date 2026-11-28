@@ -4,9 +4,9 @@ from __future__ import annotations
 import os
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QListWidget,
-                               QListWidgetItem, QPushButton, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel,
+                               QListWidget, QListWidgetItem, QPushButton,
+                               QVBoxLayout, QWidget)
 
 from ui import theme
 
@@ -28,17 +28,22 @@ class WelcomePanel(QWidget):
 
         card = QFrame()
         card.setObjectName("welcomeCard")
-        card.setMaximumWidth(620)
-        card.setMinimumWidth(500)
+        card.setMaximumWidth(660)
+        card.setMinimumWidth(520)
         lay = QVBoxLayout(card)
         lay.setContentsMargins(36, 30, 36, 28)
         lay.setSpacing(12)
 
         logo = QLabel()
+        logo.setFixedSize(68, 68)
         logo.setPixmap(theme.app_pixmap(68))
         logo.setAlignment(Qt.AlignCenter)
         logo.setStyleSheet("background:transparent;")
-        lay.addWidget(logo)
+        logo_row = QHBoxLayout()
+        logo_row.addStretch(1)
+        logo_row.addWidget(logo)
+        logo_row.addStretch(1)
+        lay.addLayout(logo_row)
 
         title = QLabel("PDF Studio")
         title.setObjectName("welcomeTitle")
@@ -51,34 +56,34 @@ class WelcomePanel(QWidget):
         sub.setWordWrap(True)
         lay.addWidget(sub)
 
-        lay.addSpacing(4)
-        row = QHBoxLayout()
-        row.setSpacing(8)
-        btn_open = QPushButton("Buka PDF")
+        lay.addSpacing(6)
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(10)
+        btn_open = QPushButton("Buka PDF…")
         btn_open.setObjectName("primary")
-        btn_open.setMinimumHeight(38)
-        btn_open.setMinimumWidth(130)
+        btn_open.setMinimumHeight(40)
         btn_open.clicked.connect(self.openRequested.emit)
 
-        btn_img = QPushButton("PDF dari Gambar")
-        btn_img.setMinimumHeight(38)
+        btn_img = QPushButton("PDF dari Gambar…")
+        btn_img.setMinimumHeight(40)
         btn_img.clicked.connect(self.imagesRequested.emit)
 
-        btn_merge = QPushButton("Gabung PDF")
-        btn_merge.setMinimumHeight(38)
+        btn_merge = QPushButton("Gabung PDF…")
+        btn_merge.setMinimumHeight(40)
         btn_merge.clicked.connect(self.mergeRequested.emit)
 
-        btn_demo = QPushButton("Dokumen Contoh")
-        btn_demo.setMinimumHeight(38)
+        btn_demo = QPushButton("Buka Dokumen Contoh")
+        btn_demo.setMinimumHeight(40)
         btn_demo.clicked.connect(self.demoRequested.emit)
 
-        row.addStretch(1)
-        row.addWidget(btn_open)
-        row.addWidget(btn_img)
-        row.addWidget(btn_merge)
-        row.addWidget(btn_demo)
-        row.addStretch(1)
-        lay.addLayout(row)
+        grid.addWidget(btn_open, 0, 0)
+        grid.addWidget(btn_img, 0, 1)
+        grid.addWidget(btn_merge, 1, 0)
+        grid.addWidget(btn_demo, 1, 1)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+        lay.addLayout(grid)
 
         # Recent files box
         self._recent_box = QWidget()
