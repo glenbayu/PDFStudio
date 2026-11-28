@@ -880,15 +880,22 @@ class MainWindow(QMainWindow):
         rail.addAction(self.act_watermark)
         rail.addAction(self.act_pagenum)
 
-        # ---- right side-panel rail (PdfCraft style: top panels + bottom page/zoom controls)
+        # ---- right side-panel rail (PdfCraft style: centered top panels + bottom page/zoom controls)
         rrail = QToolBar("Panel Samping")
         rrail.setObjectName("rightRail")
         rrail.setMovable(False)
         rrail.setOrientation(Qt.Vertical)
-        rrail.setIconSize(QSize(19, 19))
-        rrail.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        rrail.setFixedWidth(48)
         self.addToolBar(Qt.RightToolBarArea, rrail)
         self.right_rail = rrail
+
+        rail_box = QWidget()
+        rail_box.setStyleSheet("background:transparent;")
+        rl = QVBoxLayout(rail_box)
+        rl.setContentsMargins(0, 4, 0, 4)
+        rl.setSpacing(4)
+        rl.setAlignment(Qt.AlignHCenter)
+
         self._rail_buttons: list[tuple[QToolButton, QDockWidget]] = []
         for tip, icon_name, dock in (
             ("Komentar", "callout", self.dock_comments),
@@ -901,51 +908,84 @@ class MainWindow(QMainWindow):
         ):
             btn = QToolButton()
             btn.setCheckable(True)
+            btn.setFixedSize(32, 30)
+            btn.setIconSize(QSize(18, 18))
             btn.setIcon(icon(icon_name))
             btn.setToolTip(tip)
             btn.clicked.connect(lambda _c=False, d=dock: self._toggle_side_dock(d))
-            rrail.addWidget(btn)
+            rl.addWidget(btn, 0, Qt.AlignHCenter)
             self._rail_buttons.append((btn, dock))
 
-        spacer = QWidget()
-        spacer.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-        spacer.setStyleSheet("background:transparent;")
-        rrail.addWidget(spacer)
+        rl.addStretch(1)
 
+        div = QFrame()
+        div.setFrameShape(QFrame.HLine)
+        div.setFixedWidth(28)
+        div.setStyleSheet("background:#2a2d35; max-height:1px; border:0;")
+        rl.addWidget(div, 0, Qt.AlignHCenter)
+        rl.addSpacing(2)
+
+        page_card = QWidget()
+        page_card.setStyleSheet("background:transparent;")
+        pcl = QVBoxLayout(page_card)
+        pcl.setContentsMargins(0, 0, 0, 0)
+        pcl.setSpacing(1)
         self.page_spin = QSpinBox()
         self.page_spin.setRange(1, 1)
-        self.page_spin.setFixedWidth(40)
+        self.page_spin.setFixedSize(36, 24)
         self.page_spin.setAlignment(Qt.AlignCenter)
         self.page_spin.setStyleSheet(
-            "QSpinBox { padding: 3px 2px; }"
+            "QSpinBox { padding: 2px; font-size: 12px; font-weight: 600; border-radius: 5px; }"
             "QSpinBox::up-button, QSpinBox::down-button { width: 0px; border: 0px; }")
         self.page_spin.setToolTip("Nomor halaman")
-        rrail.addWidget(self.page_spin)
+        pcl.addWidget(self.page_spin, 0, Qt.AlignHCenter)
 
         self.page_total = QLabel("0")
         self.page_total.setObjectName("hint")
         self.page_total.setAlignment(Qt.AlignCenter)
-        self.page_total.setFixedWidth(40)
-        self.page_total.setStyleSheet("font-size:11px; background:transparent;")
-        rrail.addWidget(self.page_total)
+        self.page_total.setFixedSize(36, 15)
+        self.page_total.setStyleSheet("font-size:10.5px; background:transparent;")
+        pcl.addWidget(self.page_total, 0, Qt.AlignHCenter)
+        rl.addWidget(page_card, 0, Qt.AlignHCenter)
 
-        rrail.addAction(self.act_prev)
-        rrail.addAction(self.act_next)
+        btn_up = QToolButton()
+        btn_up.setText("⌃")
+        btn_up.setFixedSize(32, 22)
+        btn_up.setStyleSheet("font-size: 13px; padding: 0px;")
+        btn_up.setToolTip("Halaman sebelumnya")
+        btn_up.clicked.connect(self.act_prev.trigger)
+        rl.addWidget(btn_up, 0, Qt.AlignHCenter)
 
+        btn_dn = QToolButton()
+        btn_dn.setText("⌄")
+        btn_dn.setFixedSize(32, 22)
+        btn_dn.setStyleSheet("font-size: 13px; padding: 0px;")
+        btn_dn.setToolTip("Halaman berikutnya")
+        btn_dn.clicked.connect(self.act_next.trigger)
+        rl.addWidget(btn_dn, 0, Qt.AlignHCenter)
+
+        rl.addSpacing(2)
         self.zoom_box = QComboBox()
         self.zoom_box.setEditable(True)
-        self.zoom_box.setFixedWidth(48)
+        self.zoom_box.setFixedSize(40, 22)
         self.zoom_box.addItems(["50%", "75%", "100%", "125%", "150%", "200%", "300%"])
         self.zoom_box.setCurrentText("100%")
         self.zoom_box.setToolTip("Zoom")
-        self.zoom_box.setStyleSheet("QComboBox::drop-down { width: 0px; }")
-        rrail.addWidget(self.zoom_box)
+        self.zoom_box.setStyleSheet(
+            "QComboBox { background: transparent; border: 0px; font-size: 11px; padding: 0px; }"
+            "QComboBox:hover { background: #262930; border-radius: 5px; }"
+            "QComboBox::drop-down { width: 0px; }")
+        self.zoom_box.lineEdit().setAlignment(Qt.AlignCenter)
+        rl.addWidget(self.zoom_box, 0, Qt.AlignHCenter)
 
-        rrail.addAction(self.act_fit_w)
-        rrail.addAction(self.act_fit_p)
-        rrail.addAction(self.act_rotate_r)
-        rrail.addAction(self.act_zoom_in)
-        rrail.addAction(self.act_zoom_out)
+        for act in (self.act_fit_w, self.act_fit_p, self.act_rotate_r,
+                    self.act_zoom_in, self.act_zoom_out):
+            b = self._toolbar_btn(act)
+            b.setFixedSize(32, 28)
+            b.setIconSize(QSize(18, 18))
+            rl.addWidget(b, 0, Qt.AlignHCenter)
+
+        rrail.addWidget(rail_box)
 
     def _build_docks(self):
         self.dock_tools = QDockWidget("Semua Alat", self)
@@ -1488,7 +1528,7 @@ class MainWindow(QMainWindow):
             self.info_label.setText("Belum ada dokumen.\nBuka PDF dengan Ctrl+O.")
             self.pos_label.setText("")
             self.hint_label.setText("Siap")
-            self.page_total.setText("/ 0")
+            self.page_total.setText("0")
             self.page_spin.blockSignals(True)
             self.page_spin.setRange(0, 0)
             self.page_spin.blockSignals(False)
@@ -1502,7 +1542,7 @@ class MainWindow(QMainWindow):
             f"{info['pages']} halaman{enc}\n"
             f"Ukuran halaman {w:.0f} × {h:.0f} pt\n"
             f"{mb:.2f} MB{save_state}\n{self._short_path(os.path.dirname(info['path'] or ''))}")
-        self.page_total.setText(f"/ {self.doc.page_count}")
+        self.page_total.setText(f"{self.doc.page_count}")
         self.pos_label.setText(
             f"Halaman {self.pno + 1}/{self.doc.page_count}   ·   Zoom {self.view.zoom * 100:.0f}%"
             f"   ·   {w:.0f}×{h:.0f} pt")
