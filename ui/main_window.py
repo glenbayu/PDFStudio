@@ -91,6 +91,45 @@ def kind_label(kind: str) -> str:
     return KIND_LABELS.get((kind or "").lower(), (kind or "Anotasi").title())
 
 
+class _InspectorPage(QWidget):
+    """Lightweight page inside the single right-side Inspector dock."""
+
+    def __init__(self, title: str, dock: QDockWidget, stack: QStackedWidget, parent=None):
+        super().__init__(parent)
+        self._title = title
+        self._dock = dock
+        self._stack = stack
+        self._action = QAction(title, self)
+        self._action.setCheckable(True)
+        self._action.triggered.connect(lambda: self.show())
+
+    def setWindowTitle(self, title: str) -> None:
+        self._title = title
+        if self._stack.currentWidget() is self:
+            self._dock.setWindowTitle(title)
+
+    def toggleViewAction(self) -> QAction:
+        return self._action
+
+    def raise_(self) -> None:
+        if self._stack.currentWidget() is not self:
+            self._stack.setCurrentWidget(self)
+        self._dock.setWindowTitle(self._title)
+        self._dock.show()
+        self._action.setChecked(True)
+
+    def show(self) -> None:
+        self.raise_()
+
+    def hide(self) -> None:
+        if self._stack.currentWidget() is self:
+            self._dock.hide()
+        self._action.setChecked(False)
+
+    def isVisible(self) -> bool:
+        return self._dock.isVisible()
+
+
 @dataclass
 class TabState:
     doc: PdfDoc
@@ -174,13 +213,7 @@ class MainWindow(QMainWindow):
         self._update_actions()
         self.tool_rail.hide()
         self.dock_tools.show()
-        self.dock_thumbs.hide()
-        self.dock_props.hide()
-        self.dock_comments.hide()
-        self.dock_outline.hide()
-        self.dock_search.hide()
-        self.dock_layers.hide()
-        self.dock_fields.hide()
+        self.dock_inspector.hide()
 
         last = self._settings.value("last_folder", "")
         self._last_folder = last if isinstance(last, str) and os.path.isdir(last) else ""
@@ -885,21 +918,24 @@ class MainWindow(QMainWindow):
         self.dock_tools.setWidget(self.all_tools_panel)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.dock_tools)
 
-        self.dock_thumbs = QDockWidget("Halaman", self)
-        self.dock_thumbs.setObjectName("dock_thumbs")
-        self.dock_thumbs.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.thumbs = ThumbnailPanel()
-        self.dock_thumbs.setWidget(self.thumbs)
-        self.dock_thumbs.setMinimumWidth(200)
-        self.dock_thumbs.setMaximumWidth(320)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.dock_thumbs)
+        self.dock_inspector = QDockWidget("Properti", self)
+        self.dock_inspector.setObjectName("dock_inspector")
+        self.dock_inspector.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.dock_inspector.setMinimumWidth(265)
+        self.dock_inspector.setMaximumWidth(330)
+        self.inspector_stack = QStackedWidget()
+        self.dock_inspector.setWidget(self.inspector_stack)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.dock_inspector)
 
-        self.dock_props = QDockWidget("Properti", self)
-        self.dock_props.setObjectName("dock_props")
-        self.dock_props.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.dock_props.setMinimumWidth(246)
-        self.dock_props.setMaximumWidth(320)
-        panel = QWidget()
+        self.dock_thumbs = _InspectorPage("Halaman", self.dock_inspector, self.inspector_stack, self)
+        t_lay = QVBoxLayout(self.dock_thumbs)
+        t_lay.setContentsMargins(4, 4, 4, 4)
+        self.thumbs = ThumbnailPanel()
+        t_lay.addWidget(self.thumbs)
+        self.inspector_stack.addWidget(self.dock_thumbs)
+
+        self.dock_props = _InspectorPage("Properti", self.dock_inspector, self.inspector_stack, self)
+        panel = self.dock_props
         lay = QVBoxLayout(panel)
         lay.setContentsMargins(12, 10, 12, 12)
         lay.setSpacing(12)
@@ -1007,32 +1043,31 @@ class MainWindow(QMainWindow):
         tip.setWordWrap(True)
         lay.addWidget(tip)
 
-        self.dock_props.setWidget(panel)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.dock_props)
+        self.inspector_stack.addWidget(panel)
 
         # ---- comments
-        self.dock_comments = QDockWidget("Komentar", self)
-        self.dock_comments.setObjectName("dock_comments")
-        self.dock_comments.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.dock_comments.setMinimumWidth(246)
-        self.dock_comments.setMaximumWidth(340)
-        cw = QWidget()
-        cl = QVBoxLayout(cw)
-        cl.setContentsMargins(10, 10, 10, 10)
-        cl.setSpacing(8)
+        self.dock_comments = _InspectorPage("Komentar", self.dock_inspector, self.inspector_stack, self)
+        cl = QVBoxLayout(self.dock_comments)
+        cl.setContentsMargins(8, 8, 8, 8)
+        cl.setSpacing(6)
         self.comment_list = QListWidget()
         self.comment_list.setWordWrap(True)
         self.comment_list.itemDoubleClicked.connect(self._goto_comment)
         cl.addWidget(self.comment_list, 1)
         crow = QHBoxLayout()
+        crow.setSpacing(4)
         jump = QPushButton("Loncat")
+        jump.setStyleSheet("padding: 5px 8px;")
         jump.clicked.connect(lambda: self._goto_comment(self.comment_list.currentItem()))
         reply = QPushButton("Balas…")
+        reply.setStyleSheet("padding: 5px 8px;")
         reply.clicked.connect(self._reply_comment)
         remove = QPushButton("Hapus")
+        remove.setStyleSheet("padding: 5px 8px;")
         remove.clicked.connect(self._delete_comment)
         refresh = QPushButton("↻")
-        refresh.setFixedWidth(32)
+        refresh.setFixedWidth(28)
+        refresh.setStyleSheet("padding: 5px 4px;")
         refresh.setToolTip("Muat ulang komentar")
         refresh.clicked.connect(self._refresh_comments)
         crow.addWidget(jump)
@@ -1040,47 +1075,41 @@ class MainWindow(QMainWindow):
         crow.addWidget(remove)
         crow.addWidget(refresh)
         cl.addLayout(crow)
-        self.dock_comments.setWidget(cw)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.dock_comments)
+        self.inspector_stack.addWidget(self.dock_comments)
 
         # ---- outline
-        self.dock_outline = QDockWidget("Outline", self)
-        self.dock_outline.setObjectName("dock_outline")
-        self.dock_outline.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.dock_outline.setMinimumWidth(246)
-        self.dock_outline.setMaximumWidth(340)
-        ow = QWidget()
-        ol = QVBoxLayout(ow)
-        ol.setContentsMargins(10, 10, 10, 10)
-        ol.setSpacing(8)
+        self.dock_outline = _InspectorPage("Outline", self.dock_inspector, self.inspector_stack, self)
+        ol = QVBoxLayout(self.dock_outline)
+        ol.setContentsMargins(8, 8, 8, 8)
+        ol.setSpacing(6)
         self.outline_tree = QTreeWidget()
         self.outline_tree.setHeaderHidden(True)
         self.outline_tree.itemDoubleClicked.connect(self._goto_outline)
         ol.addWidget(self.outline_tree, 1)
         orow = QHBoxLayout()
+        orow.setSpacing(4)
         add_bm = QPushButton("Tambah…")
+        add_bm.setStyleSheet("padding: 5px 8px;")
         add_bm.clicked.connect(self._add_bookmark)
         del_bm = QPushButton("Hapus")
+        del_bm.setStyleSheet("padding: 5px 8px;")
         del_bm.clicked.connect(self._remove_bookmark)
-        reload_bm = QPushButton("Muat ulang")
+        reload_bm = QPushButton("↻")
+        reload_bm.setFixedWidth(28)
+        reload_bm.setStyleSheet("padding: 5px 4px;")
+        reload_bm.setToolTip("Muat ulang outline")
         reload_bm.clicked.connect(self._refresh_outline)
         orow.addWidget(add_bm)
         orow.addWidget(del_bm)
         orow.addWidget(reload_bm)
         ol.addLayout(orow)
-        self.dock_outline.setWidget(ow)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.dock_outline)
+        self.inspector_stack.addWidget(self.dock_outline)
 
         # ---- search results sidebar
-        self.dock_search = QDockWidget("Pencarian", self)
-        self.dock_search.setObjectName("dock_search")
-        self.dock_search.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.dock_search.setMinimumWidth(246)
-        self.dock_search.setMaximumWidth(360)
-        sw = QWidget()
-        sl = QVBoxLayout(sw)
-        sl.setContentsMargins(10, 10, 10, 10)
-        sl.setSpacing(8)
+        self.dock_search = _InspectorPage("Pencarian", self.dock_inspector, self.inspector_stack, self)
+        sl = QVBoxLayout(self.dock_search)
+        sl.setContentsMargins(8, 8, 8, 8)
+        sl.setSpacing(6)
         self.search_summary = QLabel("Ketik kata kunci di kotak Cari.")
         self.search_summary.setObjectName("hint")
         self.search_summary.setWordWrap(True)
@@ -1090,19 +1119,13 @@ class MainWindow(QMainWindow):
         self.search_list.itemClicked.connect(self._on_search_item_clicked)
         self.search_list.itemActivated.connect(self._on_search_item_clicked)
         sl.addWidget(self.search_list, 1)
-        self.dock_search.setWidget(sw)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.dock_search)
+        self.inspector_stack.addWidget(self.dock_search)
 
         # ---- layers (OCG)
-        self.dock_layers = QDockWidget("Layer (OCG)", self)
-        self.dock_layers.setObjectName("dock_layers")
-        self.dock_layers.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.dock_layers.setMinimumWidth(246)
-        self.dock_layers.setMaximumWidth(340)
-        lw = QWidget()
-        ll = QVBoxLayout(lw)
-        ll.setContentsMargins(10, 10, 10, 10)
-        ll.setSpacing(8)
+        self.dock_layers = _InspectorPage("Layer (OCG)", self.dock_inspector, self.inspector_stack, self)
+        ll = QVBoxLayout(self.dock_layers)
+        ll.setContentsMargins(8, 8, 8, 8)
+        ll.setSpacing(6)
         self.layer_summary = QLabel("Tidak ada layer (OCG) pada dokumen ini.")
         self.layer_summary.setObjectName("hint")
         self.layer_summary.setWordWrap(True)
@@ -1110,19 +1133,13 @@ class MainWindow(QMainWindow):
         self.layer_list = QListWidget()
         self.layer_list.itemChanged.connect(self._on_layer_item_changed)
         ll.addWidget(self.layer_list, 1)
-        self.dock_layers.setWidget(lw)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.dock_layers)
+        self.inspector_stack.addWidget(self.dock_layers)
 
         # ---- form fields
-        self.dock_fields = QDockWidget("Field Formulir", self)
-        self.dock_fields.setObjectName("dock_fields")
-        self.dock_fields.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.dock_fields.setMinimumWidth(246)
-        self.dock_fields.setMaximumWidth(340)
-        fw = QWidget()
-        fl = QVBoxLayout(fw)
-        fl.setContentsMargins(10, 10, 10, 10)
-        fl.setSpacing(8)
+        self.dock_fields = _InspectorPage("Field Formulir", self.dock_inspector, self.inspector_stack, self)
+        fl = QVBoxLayout(self.dock_fields)
+        fl.setContentsMargins(8, 8, 8, 8)
+        fl.setSpacing(6)
         self.field_summary = QLabel("Belum ada field formulir.")
         self.field_summary.setObjectName("hint")
         self.field_summary.setWordWrap(True)
@@ -1133,23 +1150,18 @@ class MainWindow(QMainWindow):
         self.field_list.itemDoubleClicked.connect(self._edit_field_from_panel)
         fl.addWidget(self.field_list, 1)
         frow = QHBoxLayout()
+        frow.setSpacing(4)
         btn_fedit = QPushButton("Ubah Nilai…")
+        btn_fedit.setStyleSheet("padding: 5px 8px;")
         btn_fedit.clicked.connect(lambda: self._edit_field_from_panel(self.field_list.currentItem()))
         btn_fref = QPushButton("Muat ulang")
+        btn_fref.setStyleSheet("padding: 5px 8px;")
         btn_fref.clicked.connect(self._refresh_fields)
         frow.addWidget(btn_fedit)
         frow.addWidget(btn_fref)
         fl.addLayout(frow)
-        self.dock_fields.setWidget(fw)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.dock_fields)
-
-        self.tabifyDockWidget(self.dock_props, self.dock_thumbs)
-        self.tabifyDockWidget(self.dock_props, self.dock_comments)
-        self.tabifyDockWidget(self.dock_props, self.dock_outline)
-        self.tabifyDockWidget(self.dock_props, self.dock_fields)
-        self.tabifyDockWidget(self.dock_props, self.dock_layers)
-        self.tabifyDockWidget(self.dock_props, self.dock_search)
-        self.dock_props.raise_()
+        self.inspector_stack.addWidget(self.dock_fields)
+        self.inspector_stack.setCurrentWidget(self.dock_props)
 
     def _build_status(self):
         sb = QStatusBar()
@@ -1432,48 +1444,33 @@ class MainWindow(QMainWindow):
         self.context_bar.hide()
         self.find_bar.hide()
         self.dock_tools.show()
-        for dock in (self.dock_thumbs, self.dock_props,
-                     self.dock_comments, self.dock_outline, self.dock_fields,
-                     self.dock_layers, self.dock_search):
-            dock.hide()
+        self.dock_inspector.hide()
 
     def _ensure_docks_visible(self):
         if self._docks_initialized:
             return
         self._docks_initialized = True
-        docks = (self.dock_tools, self.dock_thumbs, self.dock_props,
-                 self.dock_comments, self.dock_outline, self.dock_fields,
-                 self.dock_layers, self.dock_search)
-        saved_state = self._settings.value("dockState_v2")
+        saved_state = self._settings.value("dockState_v3")
         if saved_state:
             self.restoreState(saved_state)
-            if not any(d.isVisible() for d in docks):
-                for dock in docks:
-                    dock.show()
-        else:
-            for dock in docks:
-                dock.show()
-            self.dock_props.raise_()
+        self.dock_tools.show()
+        self.dock_inspector.show()
+        self.dock_props.raise_()
         self._sync_rail_buttons()
 
-    def _toggle_side_dock(self, target: QDockWidget):
-        side_docks = (self.dock_thumbs, self.dock_props,
-                      self.dock_comments, self.dock_outline,
-                      self.dock_fields, self.dock_layers, self.dock_search)
-        if target.isVisible() and target.visibleRegion().boundingRect().width() > 0:
-            for d in side_docks:
-                d.hide()
+    def _toggle_side_dock(self, target):
+        if self.dock_inspector.isVisible() and self.inspector_stack.currentWidget() is target:
+            self.dock_inspector.hide()
         else:
-            for d in side_docks:
-                d.show()
             target.raise_()
         self._sync_rail_buttons()
 
     def _sync_rail_buttons(self):
-        for btn, dock in getattr(self, "_rail_buttons", []):
-            active = dock.isVisible() and not dock.visibleRegion().isEmpty()
+        vis = self.dock_inspector.isVisible()
+        cur = self.inspector_stack.currentWidget()
+        for btn, page in getattr(self, "_rail_buttons", []):
             btn.blockSignals(True)
-            btn.setChecked(active)
+            btn.setChecked(vis and cur is page)
             btn.blockSignals(False)
 
     def _sync_watcher(self):
@@ -3958,9 +3955,7 @@ class MainWindow(QMainWindow):
         if self._read_mode:
             self.tool_rail.setVisible(False)
         self.doc_tabs_bar.setVisible(not self._read_mode and bool(self._tabs))
-        for dock in (self.dock_tools, self.dock_thumbs, self.dock_props,
-                     self.dock_comments, self.dock_outline, self.dock_fields,
-                     self.dock_layers, self.dock_search):
+        for dock in (self.dock_tools, self.dock_inspector):
             dock.setVisible(not self._read_mode)
         self.view.set_read_mode(self._read_mode)
         if self._read_mode:
@@ -4146,7 +4141,7 @@ class MainWindow(QMainWindow):
         self._save_view_state()
         self._settings.setValue("geometry", self.saveGeometry())
         if self._docks_initialized:
-            self._settings.setValue("dockState_v2", self.saveState())
+            self._settings.setValue("dockState_v3", self.saveState())
         for tab in self._tabs:
             recovery.discard_snapshot(tab.doc.path)
             try:

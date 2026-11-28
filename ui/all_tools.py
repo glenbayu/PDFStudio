@@ -45,7 +45,7 @@ class AllToolsPanel(QWidget):
                 btn = QToolButton()
                 btn.setObjectName("allToolsBtn")
                 btn.setDefaultAction(action)
-                btn.setText(label)
+                btn.setText(label.replace("&", "&&"))
                 btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
                 btn.setIconSize(QSize(18, 18))
                 btn.setSizePolicy(btn.sizePolicy().horizontalPolicy(),
