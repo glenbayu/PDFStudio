@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QLabel,
+from PySide6.QtWidgets import (QAbstractItemView, QFrame, QHBoxLayout, QLabel,
                                QListView, QListWidget, QListWidgetItem,
-                               QMenu, QPushButton, QSlider, QVBoxLayout,
-                               QWidget)
+                               QMenu, QPushButton, QScrollArea, QSlider,
+                               QVBoxLayout, QWidget)
 
 
 class OrganizePagesView(QWidget):
@@ -31,12 +31,20 @@ class OrganizePagesView(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # ---- top page toolbar
+        # ---- top page toolbar (scrollable horizontally on narrow windows so it never widens MainWindow)
         bar = QWidget()
         bar.setObjectName("organizeBar")
         blay = QHBoxLayout(bar)
-        blay.setContentsMargins(12, 8, 12, 8)
+        blay.setContentsMargins(10, 6, 10, 6)
         blay.setSpacing(6)
+        bar_scroll = QScrollArea()
+        bar_scroll.setObjectName("organizeBarScroll")
+        bar_scroll.setWidgetResizable(True)
+        bar_scroll.setFrameShape(QFrame.NoFrame)
+        bar_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        bar_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        bar_scroll.setFixedHeight(48)
+        bar_scroll.setMinimumWidth(0)
 
         self.sel_label = QLabel("0 halaman dipilih")
         self.sel_label.setObjectName("hint")
@@ -93,7 +101,8 @@ class OrganizePagesView(QWidget):
         self.btn_done.clicked.connect(self.closeRequested.emit)
         blay.addWidget(self.btn_done)
 
-        root.addWidget(bar)
+        bar_scroll.setWidget(bar)
+        root.addWidget(bar_scroll)
 
         # ---- page card grid
         self.grid = QListWidget()

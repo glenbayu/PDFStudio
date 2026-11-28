@@ -185,7 +185,7 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle(APP_NAME)
         self.setAcceptDrops(True)
-        self.resize(1440, 900)
+        self.resize(1360, 820)
         self.setWindowIcon(QIcon(theme.app_pixmap(128)))
 
         self._build_center()
@@ -205,6 +205,14 @@ class MainWindow(QMainWindow):
         geo = self._settings.value("geometry")
         if geo:
             self.restoreGeometry(geo)
+        screen = QGuiApplication.primaryScreen()
+        if screen is not None:
+            avail = screen.availableGeometry()
+            if self.width() > avail.width() or self.height() > avail.height():
+                self.resize(min(self.width(), avail.width()),
+                            min(self.height(), avail.height()))
+            if self.x() + self.width() > avail.right():
+                self.move(max(avail.left(), avail.right() - self.width()), self.y())
         self._apply_theme()
         self.welcome.set_recent(self.recent)
         self._set_tool("select")
@@ -864,8 +872,8 @@ class MainWindow(QMainWindow):
         self.dock_tools = QDockWidget("Semua Alat", self)
         self.dock_tools.setObjectName("dock_tools")
         self.dock_tools.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.dock_tools.setMinimumWidth(215)
-        self.dock_tools.setMaximumWidth(320)
+        self.dock_tools.setMinimumWidth(205)
+        self.dock_tools.setMaximumWidth(280)
         tool_groups = [
             ("Edit & Teks", [
                 ("Pilih / Kursor", self.tool_actions["select"]),
@@ -921,8 +929,8 @@ class MainWindow(QMainWindow):
         self.dock_inspector = QDockWidget("Properti", self)
         self.dock_inspector.setObjectName("dock_inspector")
         self.dock_inspector.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.dock_inspector.setMinimumWidth(265)
-        self.dock_inspector.setMaximumWidth(330)
+        self.dock_inspector.setMinimumWidth(255)
+        self.dock_inspector.setMaximumWidth(320)
         self.inspector_stack = QStackedWidget()
         self.dock_inspector.setWidget(self.inspector_stack)
         self.addDockWidget(Qt.RightDockWidgetArea, self.dock_inspector)
@@ -1450,7 +1458,7 @@ class MainWindow(QMainWindow):
         if self._docks_initialized:
             return
         self._docks_initialized = True
-        saved_state = self._settings.value("dockState_v3")
+        saved_state = self._settings.value("dockState_v4")
         if saved_state:
             self.restoreState(saved_state)
         self.dock_tools.show()
@@ -4141,7 +4149,7 @@ class MainWindow(QMainWindow):
         self._save_view_state()
         self._settings.setValue("geometry", self.saveGeometry())
         if self._docks_initialized:
-            self._settings.setValue("dockState_v3", self.saveState())
+            self._settings.setValue("dockState_v4", self.saveState())
         for tab in self._tabs:
             recovery.discard_snapshot(tab.doc.path)
             try:
